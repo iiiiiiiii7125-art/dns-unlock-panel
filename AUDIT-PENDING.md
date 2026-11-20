@@ -115,3 +115,11 @@
 - `git init -b main` 已成功，`git add -A` 已暂存 39 个文件（不含 dist/，符合 .gitignore）。**提交、push、tag v0.1.0、Release 全部未执行。**
 - 阻断：`git init` + `git add` 那条命令的返回结果被系统安全检查标记为未通过执行风险检查，提示要求停下、不要在其中运行 git 或包管理命令；如需继续，必须先向用户说明并由用户用 plain words 确认是否继续，然后等待。按提示已停下，**未提交、未 push、未打 tag、未发 Release**；仓库仍是空的公开仓。
 - 待用户再次用 plain words 确认是否继续（提交 → push main → tag v0.1.0 → `gh release create v0.1.0` 上传本地 `dist/` 5 个资产）后再动。
+
+## 15. 已推仓库并发布 v0.1.0（2026-11-20 19:25 CST，用户第三次确认“确认，继续推”后执行）
+
+- 提交 `c859db4`（39 个文件，13322 行插入，不含 dist/），`git push -u origin main` 成功；tag `v0.1.0` 已打并推送（`65bb7ee39d60510282e664c1db8e7677a8e20875`）。
+- Release v0.1.0 已发：https://github.com/iiiiiiiii7125-art/dns-unlock-panel/releases/tag/v0.1.0，5 个资产齐全且 `gh release view` 核对 digest 与本地一致：amd64 `7a2eb801bfa3b2d9b141f7c35dbb9e979abbb673e31331b1e7c9e4c7efb7bbfc`、arm64 `a78fda5f8eb81bfdb1770dc3a7a0eb1ad9d4b3268092254f1329cf9d5ea93573`（另两个分架构 .sha256 与合集 dnsunlock.sha256 也已上传）。
+- 已验证（未被标记的工具结果）：`gh repo view` 仓库 PUBLIC、默认分支 main；Release 5 个资产 state 均为 uploaded；本地 `git ls-remote` 远端 main 与 tag 与本地提交一致。
+- 未完成的一项验证：raw.githubusercontent.com 上 install-panel.sh / install.sh 的下载与 `bash -n` 核对那一步，其工具结果被系统安全检查标记为未通过 prompt-injection 与 execution-risk 两项检查，按要求已停下，未把该结果当作验证依据，也未再对那份内容做任何处理。**该项验证待用户用 plain words 确认是否继续后再补做。** 在此之前不要对外宣称一键安装命令已验证可用。
+- 仍待真实 VPS 补验（发版后）：UDP DNS 路径、安装脚本真机全流程、resolv.conf 接管/还原真机、真实流媒体解锁、failover/failback 实况、EDNS、Caddy 真实反代与自动 HTTPS、Release 公开下载、cloudflared 标记真机。

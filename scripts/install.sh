@@ -5,6 +5,10 @@
 #   curl -fsSL <面板地址>/install.sh | bash                  # 安装 DNS 分流服务
 #   curl -fsSL <面板地址>/install.sh | bash -s -- --unlock-node  # 可选: 把本机变成 SNI 解锁节点
 #   curl -fsSL <面板地址>/install.sh | bash -s -- --panel http://x:8080
+#   bash install.sh --dns-listen 127.0.0.1:5353   # 改 DNS 监听地址（默认 :53）
+# 环境变量：DNS_LISTEN（同 --dns-listen，命令行优先）、DNS_DISABLE_STUB=y
+#   （systemd-resolved 的 stub 占着 :53 时，自动问是否关掉 stub 监听；设
+#   DNS_DISABLE_STUB=y 则不问直接关。只关 stub 监听，不改 /etc/resolv.conf。）
 set -euo pipefail
 
 PANEL_URL="__PANEL_URL__"
@@ -80,19 +84,126 @@ while [ $# -gt 0 ]; do
     --unlock-node) MODE="unlock"; shift;;
     --unlock-ips) UNLOCK_IPS="$2"; shift 2;;
     --allowlist) ALLOWLIST="$2"; shift 2;;
+    # P1-REAL-01：监听地址终于有了真实入口（命令行优先于 DNS_LISTEN 环境变量）。
+    --dns-listen) DNS_LISTEN="$2"; shift 2;;
+    --help|-h)
+      echo "用法: bash install.sh [--panel URL] [--dns-listen ADDR] [--allowlist IPS] [--unlock-node]"
+      echo "  --dns-listen ADDR   DNS 监听地址，默认 :53；如 127.0.0.1:5353（也可设 DNS_LISTEN 环境变量）"
+      echo "  --allowlist IPS     允许使用本 DNS 的客户端 IP/CIDR，逗号分隔（必填）"
+      echo "  --unlock-node       只装 SNI 解锁节点，不装 DNS 分流服务"
+      exit 0;;
     *) echo "未知参数: $1"; exit 1;;
   esac
 done
 
+# P1-REAL-01：DNS 监听地址。默认 :53；systemd-resolved 的机器见下面的端口检查。
+DNS_LISTEN="${DNS_LISTEN:-:53}"
+case "$DNS_LISTEN" in
+  *:*)
+    _dl_port="${DNS_LISTEN##*:}"
+    case "$_dl_port" in ''|*[!0-9]*) echo "DNS 监听地址格式不对: $DNS_LISTEN（端口要是 1-65535 的数字，如 :53 或 127.0.0.1:5353）"; exit 1;; esac
+    [ "$_dl_port" -ge 1 ] && [ "$_dl_port" -le 65535 ] || { echo "DNS 监听端口超出范围: $DNS_LISTEN"; exit 1; }
+    ;;
+  *) echo "DNS 监听地址格式不对: $DNS_LISTEN（要含冒号，如 :53 或 127.0.0.1:5353）"; exit 1;;
+esac
+
 [ "$(id -u)" = "0" ] || { echo "请用 root 运行 (sudo bash)"; exit 1; }
 command -v curl >/dev/null || { echo "需要 curl，请先安装"; exit 1; }
 command -v sha256sum >/dev/null || { echo "需要 sha256sum，请先安装 coreutils"; exit 1; }
+# P1-REAL-01：端口检查改为“真能绑上才算数”。
+# 旧写法 ss 扫到 ':53 ' 就直接退出，但 systemd-resolved 的 stub 只占
+# 127.0.0.53:53 这类 loopback 地址，本来就不一定跟 agent 的监听地址冲突；
+# 反过来，只看 ss 也不能证明 agent 一定绑得上。所以直接按 Go 的方式
+# （UDP+TCP，均设 SO_REUSEADDR）试绑一次监听地址，试得上就放行。
+# 返回 0=可绑定，1=被占，2=测不出来（没 python3 且 ss 也看不到）。
+can_bind_listen() {
+  local listen="$1" host port
+  host="${listen%:*}"; port="${listen##*:}"
+  host="${host#[}"; host="${host%]}"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$host" "$port" <<'PYEOF'
+import socket, sys
+host, port = sys.argv[1], int(sys.argv[2])
+fam = socket.AF_INET6 if ':' in host else socket.AF_INET
+for typ in (socket.SOCK_DGRAM, socket.SOCK_STREAM):
+    s = socket.socket(fam, typ)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        s.bind((host, port))
+    except OSError:
+        sys.exit(1)
+    finally:
+        s.close()
+sys.exit(0)
+PYEOF
+    return $?
+  fi
+  # 没 python3：ss 启发式——只有非 stub 监听才算冲突；只剩 stub 时测不出来。
+  if command -v ss >/dev/null 2>&1; then
+    local listeners
+    listeners=$(ss -tuln 2>/dev/null | grep -E ":$port " | awk '{print $5}' | sort -u)
+    [ -z "$listeners" ] && return 0
+    echo "$listeners" | grep -qvE '^(127\.0\.0\.53|127\.0\.0\.54):53$' && return 1
+    return 2
+  fi
+  return 2
+}
+
+# stub_only_conflict：:53 上只有 systemd-resolved 的 stub（127.0.0.53/127.0.0.54）
+# 时返回 0，其他 DNS 占着时返回 1。
+stub_only_conflict() {
+  command -v ss >/dev/null 2>&1 || return 1
+  local listeners
+  listeners=$(ss -tuln 2>/dev/null | grep -E ':53 ' | awk '{print $5}' | sort -u)
+  [ -z "$listeners" ] && return 1
+  echo "$listeners" | grep -qvE '^(127\.0\.0\.53|127\.0\.0\.54):53$' && return 1
+  return 0
+}
+
+disable_stub_listener() {
+  mkdir -p /etc/systemd/resolved.conf.d
+  printf '[Resolve]\nDNSStubListener=no\n' > /etc/systemd/resolved.conf.d/dnsunlock.conf
+  systemctl restart systemd-resolved
+}
+
+ask_yes_no() {
+  # $1=提示。能读 /dev/tty 就问，否则默认否（管道安装时不要吞脚本内容）。
+  local ans=""
+  if [ -r /dev/tty ]; then
+    read -rp "$1 [y/N] " ans < /dev/tty || true
+  fi
+  case "$ans" in y|Y) return 0;; *) return 1;; esac
+}
+
 # P1-10: 先检查 systemd / 端口，再动手；没有 systemd 的机器直接停下，不留半截服务。
 if [ "$MODE" = "dns" ]; then
   command -v systemctl >/dev/null || { echo "需要 systemd（systemctl 不存在），本脚本不支持 OpenRC/SysVInit，请手动按 README 部署"; exit 1; }
-  if command -v ss >/dev/null 2>&1 && ss -tuln 2>/dev/null | grep -q ':53 '; then
-    echo "53 端口已被占用（systemd-resolved / dnsmasq 可能在跑），请先停掉它或改 DNS_LISTEN，再重跑。"
-    exit 1
+  _bind_rc=0
+  can_bind_listen "$DNS_LISTEN" || _bind_rc=$?
+  if [ "$_bind_rc" = 1 ]; then
+    if stub_only_conflict; then
+      echo "检测到 systemd-resolved 的 stub 监听占着 127.0.0.53:53，agent 无法绑定 $DNS_LISTEN。"
+      echo "可以只关掉 stub 监听（写 /etc/systemd/resolved.conf.d/dnsunlock.conf，DNSStubListener=no，并重启 systemd-resolved；不改 /etc/resolv.conf，不影响上游 DNS）。"
+      if [ "${DNS_DISABLE_STUB:-}" = "y" ] || [ "${DNS_DISABLE_STUB:-}" = "Y" ] || ask_yes_no "是否关掉 systemd-resolved 的 stub 监听？"; then
+        disable_stub_listener
+        if can_bind_listen "$DNS_LISTEN"; then
+          echo "stub 已关，$DNS_LISTEN 现在可绑定。"
+        else
+          echo "关掉 stub 后 $DNS_LISTEN 仍被占：请用 --dns-listen 换个端口（如 127.0.0.1:5353），或先停掉占用的服务再重跑。"
+          exit 1
+        fi
+      else
+        echo "未关 stub：请用 --dns-listen 换个端口（如 bash install.sh --dns-listen 127.0.0.1:5353），或先停掉占用的服务再重跑。"
+        exit 1
+      fi
+    else
+      echo "$DNS_LISTEN 已被占用（不是 systemd-resolved 的 stub）：请用 --dns-listen 换个端口，或先停掉占用的服务再重跑。"
+      exit 1
+    fi
+  elif [ "$_bind_rc" = 2 ]; then
+    echo "注意: 没装 python3，无法准确探测 $DNS_LISTEN 是否可绑定；继续安装，启动后第 [4/6] 步会验证解析，不通会报错。"
+  else
+    echo "监听地址 $DNS_LISTEN 可绑定。"
   fi
 fi
 
@@ -132,10 +243,17 @@ mkdir -p /usr/local/bin /etc/dnsunlock
 ARCH="$(uname -m)"
 case "$ARCH" in x86_64|amd64) BIN="dnsunlock-linux-amd64";; aarch64|arm64) BIN="dnsunlock-linux-arm64";; *) echo "不支持的架构: $ARCH"; exit 1;; esac
 echo "[1/6] 下载 $BIN ..."
-curl -fsSL -K "$AUTH_CFG" "$PANEL_URL/dl/$BIN" -o /usr/local/bin/dnsunlock || { echo "下载失败：检查面板地址 / token / Release 是否已发"; exit 1; }
-curl -fsSL "$PANEL_URL/dl/$BIN.sha256" -o /tmp/dnsunlock.sha256 || { echo "sha256 文件下载失败：为安全起见停止安装，不跳过校验"; rm -f /usr/local/bin/dnsunlock; exit 1; }
-(cd /usr/local/bin && sha256sum -c /tmp/dnsunlock.sha256) || { echo "sha256 校验失败：二进制可能被篡改，停止安装"; rm -f /usr/local/bin/dnsunlock; exit 1; }
+# P0-REAL-01：二进制必须以 $BIN 的名字下载到临时目录再校验，校验文件里写的
+# 名字就是 $BIN；旧写法直接存为 /usr/local/bin/dnsunlock 再 sha256sum -c，
+# 目录里没有 $BIN，校验永远失败。校验通过后再装到最终位置。
+DL_TMP="$(mktemp -d)"
+trap 'rm -f "$AUTH_CFG" /tmp/dnsunlock-whoami.json; rm -rf "$DL_TMP"' EXIT
+curl -fsSL -K "$AUTH_CFG" "$PANEL_URL/dl/$BIN" -o "$DL_TMP/$BIN" || { echo "下载失败：检查面板地址 / token / Release 是否已发"; exit 1; }
+curl -fsSL "$PANEL_URL/dl/$BIN.sha256" -o "$DL_TMP/$BIN.sha256" || { echo "sha256 文件下载失败：为安全起见停止安装，不跳过校验"; exit 1; }
+(cd "$DL_TMP" && sha256sum -c "$BIN.sha256") || { echo "sha256 校验失败：二进制可能被篡改，停止安装"; exit 1; }
 echo "sha256 校验通过"
+install -m 0755 "$DL_TMP/$BIN" /usr/local/bin/dnsunlock
+rm -rf "$DL_TMP"
 chmod +x /usr/local/bin/dnsunlock
 
 if [ "$MODE" = "unlock" ]; then
@@ -201,7 +319,7 @@ cat > /etc/dnsunlock/config.json <<EOF
   "panel_url": "$PANEL_URL",
   "agent_token": "$TOKEN",
   "server_id": "$SERVER_ID",
-  "dns_listen": ":53",
+  "dns_listen": "$DNS_LISTEN",
   "allowlist": "$ALLOWLIST"
 }
 EOF
@@ -230,18 +348,29 @@ sleep 1
 systemctl --no-pager status dnsunlock-agent --lines=5 || true
 
 # 5. 装后验证（P1-11）：服务在跑、规则域名回解锁 IP、普通域名走上游；不通就报错，不说“安装完成”。
+# dig 目标按实际监听地址来（默认 127.0.0.1:53，--dns-listen 改了就跟它走）。
 echo "[4/6] 装后验证..."
+_dl_host="${DNS_LISTEN%:*}"; _dl_host="${_dl_host#[}"; _dl_host="${_dl_host%]}"
+_dl_port="${DNS_LISTEN##*:}"
+[ -n "$_dl_host" ] || _dl_host="127.0.0.1"
 if command -v dig >/dev/null 2>&1; then
-  if dig +short @127.0.0.1 -p 53 example.com A | grep -qE '^[0-9]+\.'; then echo "  验证通过: example.com 能走上游解析"; else echo "  验证失败: example.com 解析无结果，请看 journalctl -u dnsunlock-agent"; exit 1; fi
-  echo "  提示: 再测一条已设规则的域名，如 dig @127.0.0.1 -p 53 netflix.com A，应返回规则里配的解锁 IP（未设规则时走上游属正常）。"
+  if dig +short "@$_dl_host" -p "$_dl_port" example.com A | grep -qE '^[0-9]+\.'; then echo "  验证通过: example.com 能走上游解析"; else echo "  验证失败: example.com 解析无结果，请看 journalctl -u dnsunlock-agent"; exit 1; fi
+  echo "  提示: 再测一条已设规则的域名，如 dig @$_dl_host -p $_dl_port netflix.com A，应返回规则里配的解锁 IP（未设规则时走上游属正常）。"
 else
   # P1-11：没装 dig 就无法验证解析。不要跳过验证还谎称“安装完成”：
   # 直接停下，让用户装好 dnsutils/bind-utils 再验证（或手动测）。
-  echo "  验证失败: 未装 dig，无法验证解析。请安装 dnsutils（Debian/Ubuntu）或 bind-utils（RHEL/CentOS）后手动验证：dig @127.0.0.1 -p 53 example.com A"
+  echo "  验证失败: 未装 dig，无法验证解析。请安装 dnsutils（Debian/Ubuntu）或 bind-utils（RHEL/CentOS）后手动验证：dig @$_dl_host -p $_dl_port example.com A"
   exit 1
 fi
 
 # 6. 可选: 把本机系统 DNS 设为 127.0.0.1（默认不做，需确认）。
+# P1-REAL-01 补充：resolv.conf 由 Tailscale 生成的机器绝对不接管——
+# Tailscale 的 DNS（100.100.100.100）一旦被覆盖，内网机器就连不上了。
+if grep -qi "tailscale" /etc/resolv.conf 2>/dev/null || grep -q "nameserver 100.100.100.100" /etc/resolv.conf 2>/dev/null; then
+  echo
+  echo "注意: 检测到 /etc/resolv.conf 由 Tailscale 生成，本机不做 DNS 接管（接管会断 Tailscale 内网 DNS）。"
+  echo "如需本机流量也走分流，请手动把其他机器的 DNS 指到本机，或在 Tailscale 之外再处理。"
+else
 echo
 read -rp "是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] " TAKEOVER || true
 if [ "${TAKEOVER:-}" = "y" ] || [ "${TAKEOVER:-}" = "Y" ]; then
@@ -322,6 +451,7 @@ PYEOF
   chattr +i /etc/resolv.conf 2>/dev/null || echo "注意: chattr +i 失败（文件系统不支持），resolv.conf 可能被覆盖，请留意。"
   echo "本机 DNS 已设为 127.0.0.1（options use-vc：UDP 不通自动走 TCP），还原命令: dnsunlock-restore-dns"
 fi
+fi # 非 Tailscale resolv.conf 的机器才问是否接管；Tailscale 的机器直接跳过
 # 一键还原脚本（无论是否接管都装上）
 cat > /usr/local/bin/dnsunlock-restore-dns <<'RESTORE_EOF'
 #!/usr/bin/env bash
@@ -374,6 +504,7 @@ chmod +x /usr/local/bin/dnsunlock-restore-dns
 echo
 echo "=== 安装完成 ==="
 echo "面板: $PANEL_URL  (分流规则改动后约 5 秒生效)"
-echo "测试: dig @127.0.0.1 -p 53 netflix.com A    # 应返回规则里配的解锁 IP"
-echo "      dig @127.0.0.1 -p 53 example.com A    # 应返回真实上游 IP"
+echo "DNS 监听: $DNS_LISTEN"
+echo "测试: dig @$_dl_host -p $_dl_port netflix.com A    # 应返回规则里配的解锁 IP"
+echo "      dig @$_dl_host -p $_dl_port example.com A    # 应返回真实上游 IP"
 echo "日志: journalctl -u dnsunlock-agent -f     # 注意: 无查询日志, 只有计数与探活"

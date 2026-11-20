@@ -60,10 +60,12 @@ mkdir -p /usr/local/bin /etc/dnsunlock
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 echo "[1/4] 下载面板二进制 $BIN ..."
-curl -fsSL "$REPO/releases/latest/download/$BIN" -o "$TMP/dnsunlock" || { echo "下载失败：Release 还没发或网络不通"; exit 1; }
+# P0-REAL-01：二进制必须以 $BIN 的名字下载，校验文件里写的名字就是 $BIN；
+# 旧写法下载为 $TMP/dnsunlock 再 sha256sum -c，目录里没有 $BIN，校验永远失败。
+curl -fsSL "$REPO/releases/latest/download/$BIN" -o "$TMP/$BIN" || { echo "下载失败：Release 还没发或网络不通"; exit 1; }
 curl -fsSL "$REPO/releases/latest/download/$BIN.sha256" -o "$TMP/$BIN.sha256" || { echo "sha256 文件下载失败，停止安装"; exit 1; }
 (cd "$TMP" && sha256sum -c "$BIN.sha256") || { echo "sha256 校验失败，停止安装"; exit 1; }
-install -m 0755 "$TMP/dnsunlock" /usr/local/bin/dnsunlock
+install -m 0755 "$TMP/$BIN" /usr/local/bin/dnsunlock
 mkdir -p /var/lib/dnsunlock
 echo "sha256 校验通过"
 
