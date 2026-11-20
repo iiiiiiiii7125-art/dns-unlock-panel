@@ -68,6 +68,26 @@ curl -fsSL "$REPO/releases/latest/download/$BIN.sha256" -o "$TMP/$BIN.sha256" ||
 install -m 0755 "$TMP/$BIN" /usr/local/bin/dnsunlock
 mkdir -p /var/lib/dnsunlock
 echo "sha256 校验通过"
+# P0-REAL-02：面板的 /dl/ 从 dist 目录发二进制，agent 一键安装靠它下载。
+# 旧脚本只装 /usr/local/bin/dnsunlock，从不建 dist 目录，/dl/ 永远 404，
+# agent 一键安装在 [1/6] 下载那步必失败。把 5 个 Release 资产都放进 dist。
+DIST_DIR="/var/lib/dnsunlock/dist"
+mkdir -p "$DIST_DIR"
+case "$BIN" in
+  *amd64) OTHER_BIN="dnsunlock-linux-arm64" ;;
+  *) OTHER_BIN="dnsunlock-linux-amd64" ;;
+esac
+curl -fsSL "$REPO/releases/latest/download/$OTHER_BIN" -o "$TMP/$OTHER_BIN" || { echo "另一架构二进制下载失败，停止安装"; exit 1; }
+curl -fsSL "$REPO/releases/latest/download/$OTHER_BIN.sha256" -o "$TMP/$OTHER_BIN.sha256" || { echo "另一架构 sha256 下载失败，停止安装"; exit 1; }
+(cd "$TMP" && sha256sum -c "$OTHER_BIN.sha256") || { echo "另一架构 sha256 校验失败，停止安装"; exit 1; }
+curl -fsSL "$REPO/releases/latest/download/dnsunlock.sha256" -o "$TMP/dnsunlock.sha256" || { echo "合集 sha256 下载失败，停止安装"; exit 1; }
+install -m 0644 "$TMP/$BIN" "$DIST_DIR/$BIN"
+install -m 0644 "$TMP/$BIN.sha256" "$DIST_DIR/$BIN.sha256"
+install -m 0644 "$TMP/$OTHER_BIN" "$DIST_DIR/$OTHER_BIN"
+install -m 0644 "$TMP/$OTHER_BIN.sha256" "$DIST_DIR/$OTHER_BIN.sha256"
+install -m 0644 "$TMP/dnsunlock.sha256" "$DIST_DIR/dnsunlock.sha256"
+(cd "$DIST_DIR" && sha256sum -c dnsunlock.sha256) || { echo "dist 合集校验失败，停止安装"; exit 1; }
+echo "dist 已就绪: $DIST_DIR（5 个资产，/dl/ 可下载）"
 
 echo "[2/4] 写 systemd 服务..."
 cat > /etc/systemd/system/dnsunlock-panel.service <<EOF
@@ -76,7 +96,7 @@ Description=dnsunlock panel (DNS split unlock management)
 After=network-online.target
 Wants=network-online.target
 [Service]
-ExecStart=/usr/local/bin/dnsunlock panel -addr :$PORT -data /var/lib/dnsunlock/panel.json
+ExecStart=/usr/local/bin/dnsunlock panel -addr :$PORT -data /var/lib/dnsunlock/panel.json -dist /var/lib/dnsunlock/dist
 Restart=always
 RestartSec=3
 StateDirectory=dnsunlock
