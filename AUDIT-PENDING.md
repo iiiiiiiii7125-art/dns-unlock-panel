@@ -123,3 +123,10 @@
 - 已验证（未被标记的工具结果）：`gh repo view` 仓库 PUBLIC、默认分支 main；Release 5 个资产 state 均为 uploaded；本地 `git ls-remote` 远端 main 与 tag 与本地提交一致。
 - 未完成的一项验证：raw.githubusercontent.com 上 install-panel.sh / install.sh 的下载与 `bash -n` 核对那一步，其工具结果被系统安全检查标记为未通过 prompt-injection 与 execution-risk 两项检查，按要求已停下，未把该结果当作验证依据，也未再对那份内容做任何处理。**该项验证待用户用 plain words 确认是否继续后再补做。** 在此之前不要对外宣称一键安装命令已验证可用。
 - 仍待真实 VPS 补验（发版后）：UDP DNS 路径、安装脚本真机全流程、resolv.conf 接管/还原真机、真实流媒体解锁、failover/failback 实况、EDNS、Caddy 真实反代与自动 HTTPS、Release 公开下载、cloudflared 标记真机。
+
+## 16. v0.1.1 已发布（2026-11-20 21:15–21:35 CST，真机实测问题修复）
+
+- 真机实测（audit/REAL-MACHINE-TEST.md）发现 P0（两安装脚本 sha256 校验文件名不匹配，一键安装必失败）与 P1（install.sh 在 systemd-resolved 机器上直接拒绝运行）；修复验证中又发现 P0-REAL-02（install-panel.sh 从不建 dist 目录，面板 /dl/ 永远 404，agent 一键安装下载必失败）与 P1 修复的后续 bug（stub 判定正则不认 ss 的 `127.0.0.53%lo:53` 后缀）。
+- 修复提交：bac8c69（P0+P1）、d06fb4a（stub %zone 后缀）、bfdb86d（dist 目录），均已推 main；tag v0.1.1 已打并推送；Release v0.1.1 已发：https://github.com/iiiiiiiii7125-art/dns-unlock-panel/releases/tag/v0.1.1，5 个资产齐全，digest 与本地重编一致（amd64 19732e0c…、arm64 91353138…）。
+- 真机验证（测试机 ip-172-26-15-152）：面板一键安装成功、/dl/ 可下载且哈希一致、DNS agent 一键安装成功（stub 关后 :53 可绑）、UDP/TCP 查 netflix.com 返回规则 IP、AAAA 为 NODATA、规则 7 秒内生效、白名单外被拒、机器原有服务未受影响、resolv.conf 未动。详见 audit/FIX-REPORT-5.md。
+- 遗留：README 的 --dns-listen 说明未补（脚本 --help 已有）；覆盖升级需先停面板；raw.githubusercontent.com 刚 push 后几分钟可能有缓存，验证时用 commit-SHA 的 raw 链接可避开；仍待真实流媒体解锁、Caddy 真实反代 + 自动 HTTPS、failover 实况、EDNS。
