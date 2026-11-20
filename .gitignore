@@ -1,0 +1,4 @@
+data/panel.json
+data/panel.json.bak
+dist/
+*.log

@@ -1,0 +1,3131 @@
+[
+  {
+    "id": "netflix",
+    "name": "Netflix",
+    "name_zh": "奈飞",
+    "category": "流媒体",
+    "regions_available": [
+      "HK",
+      "TW",
+      "JP",
+      "KR",
+      "US",
+      "GB",
+      "SG",
+      "DE",
+      "FR",
+      "NL",
+      "CA",
+      "AU",
+      "BR",
+      "IN",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "VN",
+      "TR",
+      "MX",
+      "AR",
+      "ZA",
+      "AE"
+    ],
+    "domains": [
+      "netflix.com",
+      "nflxvideo.net",
+      "nflximg.net",
+      "nflxso.net"
+    ]
+  },
+  {
+    "id": "disneyplus",
+    "name": "Disney+",
+    "name_zh": "迪士尼+",
+    "category": "流媒体",
+    "regions_available": [
+      "HK",
+      "TW",
+      "JP",
+      "KR",
+      "US",
+      "GB",
+      "SG",
+      "DE",
+      "FR",
+      "NL",
+      "CA",
+      "AU",
+      "BR",
+      "IN",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "VN",
+      "TR",
+      "MX",
+      "AR",
+      "ZA",
+      "AE"
+    ],
+    "domains": [
+      "disneyplus.com",
+      "disney-plus.net",
+      "dssott.com",
+      "disneyplus.bn5x.net"
+    ]
+  },
+  {
+    "id": "hbomax",
+    "name": "HBO Max",
+    "name_zh": "HBO Max",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "SG",
+      "JP",
+      "KR",
+      "HK",
+      "TW",
+      "DE",
+      "FR",
+      "NL",
+      "CA",
+      "AU",
+      "BR",
+      "MX",
+      "AR"
+    ],
+    "domains": [
+      "hbomax.com",
+      "max.com",
+      "hbo.com"
+    ]
+  },
+  {
+    "id": "hulu",
+    "name": "Hulu",
+    "name_zh": "Hulu",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "JP"
+    ],
+    "domains": [
+      "hulu.com",
+      "hulustream.com",
+      "huluim.com"
+    ]
+  },
+  {
+    "id": "primevideo",
+    "name": "Amazon Prime Video",
+    "name_zh": "亚马逊 Prime Video",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "JP",
+      "DE",
+      "FR",
+      "CA",
+      "AU",
+      "IN",
+      "SG",
+      "HK",
+      "TW",
+      "BR",
+      "MX",
+      "NL"
+    ],
+    "domains": [
+      "primevideo.com",
+      "amazonvideo.com",
+      "aiv-cdn.net"
+    ]
+  },
+  {
+    "id": "appletv",
+    "name": "Apple TV+",
+    "name_zh": "苹果 TV+",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "tv.apple.com",
+      "itunes.apple.com",
+      "aaplimg.com"
+    ]
+  },
+  {
+    "id": "youtube-premium",
+    "name": "YouTube Premium",
+    "name_zh": "油管 Premium",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "KR",
+      "SG",
+      "GB",
+      "DE",
+      "FR",
+      "IN",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "VN",
+      "BR",
+      "MX",
+      "TR",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "youtube.com",
+      "ytimg.com",
+      "youtube-nocookie.com"
+    ]
+  },
+  {
+    "id": "spotify",
+    "name": "Spotify",
+    "name_zh": "声破天",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "DE",
+      "FR",
+      "NL",
+      "CA",
+      "AU",
+      "BR",
+      "MX",
+      "KR",
+      "IN",
+      "TH",
+      "ID",
+      "MY",
+      "PH"
+    ],
+    "domains": [
+      "spotify.com",
+      "scdn.co",
+      "spotifycdn.com",
+      "spoti.fi"
+    ]
+  },
+  {
+    "id": "chatgpt",
+    "name": "ChatGPT / OpenAI",
+    "name_zh": "ChatGPT",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "openai.com",
+      "chatgpt.com",
+      "chat.openai.com",
+      "oaistatic.com",
+      "oaiusercontent.com"
+    ]
+  },
+  {
+    "id": "claude",
+    "name": "Claude",
+    "name_zh": "Claude",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "GB",
+      "SG",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL"
+    ],
+    "domains": [
+      "claude.ai",
+      "anthropic.com",
+      "claude.com"
+    ]
+  },
+  {
+    "id": "gemini",
+    "name": "Google Gemini",
+    "name_zh": "谷歌 Gemini",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "IN"
+    ],
+    "domains": [
+      "gemini.google.com",
+      "bard.google.com",
+      "generativelanguage.googleapis.com",
+      "ai.google.dev"
+    ]
+  },
+  {
+    "id": "tiktok",
+    "name": "TikTok",
+    "name_zh": "抖音国际版",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "MY",
+      "TH",
+      "ID",
+      "PH",
+      "VN",
+      "BR",
+      "MX",
+      "AU",
+      "CA"
+    ],
+    "domains": [
+      "tiktok.com",
+      "tiktokcdn.com",
+      "tiktokv.com",
+      "musical.ly"
+    ]
+  },
+  {
+    "id": "instagram",
+    "name": "Instagram",
+    "name_zh": "Instagram",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "IN"
+    ],
+    "domains": [
+      "instagram.com",
+      "cdninstagram.com"
+    ]
+  },
+  {
+    "id": "facebook",
+    "name": "Facebook",
+    "name_zh": "脸书",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "IN"
+    ],
+    "domains": [
+      "facebook.com",
+      "fb.com"
+    ]
+  },
+  {
+    "id": "x",
+    "name": "X (Twitter)",
+    "name_zh": "X 推特",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "IN"
+    ],
+    "domains": [
+      "x.com",
+      "twitter.com",
+      "t.co"
+    ]
+  },
+  {
+    "id": "dazn",
+    "name": "DAZN",
+    "name_zh": "DAZN 体育",
+    "category": "其他",
+    "regions_available": [
+      "JP",
+      "DE",
+      "GB",
+      "CA",
+      "US",
+      "AU",
+      "BR",
+      "IT",
+      "ES",
+      "AT"
+    ],
+    "domains": [
+      "dazn.com",
+      "daznedge.com"
+    ]
+  },
+  {
+    "id": "espnplus",
+    "name": "ESPN+",
+    "name_zh": "ESPN+",
+    "category": "其他",
+    "regions_available": [
+      "US",
+      "CA",
+      "GB",
+      "AU",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "espn.com",
+      "espnplus.com",
+      "espncdn.com"
+    ]
+  },
+  {
+    "id": "paramountplus",
+    "name": "Paramount+",
+    "name_zh": "派拉蒙+",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU",
+      "BR",
+      "MX",
+      "DE",
+      "FR",
+      "JP",
+      "KR"
+    ],
+    "domains": [
+      "paramountplus.com",
+      "cbs.com",
+      "paramountplus.qik.com"
+    ]
+  },
+  {
+    "id": "peacock",
+    "name": "Peacock",
+    "name_zh": "孔雀 TV",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "peacocktv.com",
+      "peacock.com",
+      "nbc.com"
+    ]
+  },
+  {
+    "id": "bbciplayer",
+    "name": "BBC iPlayer",
+    "name_zh": "BBC iPlayer",
+    "category": "流媒体",
+    "regions_available": [
+      "GB"
+    ],
+    "domains": [
+      "bbci.co.uk",
+      "bbc.co.uk"
+    ]
+  },
+  {
+    "id": "itv",
+    "name": "ITVX",
+    "name_zh": "ITVX",
+    "category": "流媒体",
+    "regions_available": [
+      "GB"
+    ],
+    "domains": [
+      "itv.com",
+      "itvx.com"
+    ]
+  },
+  {
+    "id": "channel4",
+    "name": "Channel 4",
+    "name_zh": "第四频道",
+    "category": "流媒体",
+    "regions_available": [
+      "GB"
+    ],
+    "domains": [
+      "channel4.com",
+      "c4.com"
+    ]
+  },
+  {
+    "id": "crunchyroll",
+    "name": "Crunchyroll",
+    "name_zh": "Crunchyroll",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "JP",
+      "GB",
+      "CA",
+      "AU",
+      "SG",
+      "BR",
+      "MX",
+      "DE",
+      "FR",
+      "NL",
+      "IN",
+      "PH",
+      "TH",
+      "ID",
+      "MY"
+    ],
+    "domains": [
+      "crunchyroll.com",
+      "vrv.co",
+      "crunchyroll.ca"
+    ]
+  },
+  {
+    "id": "bilibili-intl",
+    "name": "Bilibili 国际版",
+    "name_zh": "Bilibili 国际",
+    "category": "流媒体",
+    "regions_available": [
+      "HK",
+      "TW",
+      "SG",
+      "MY",
+      "TH",
+      "PH",
+      "ID",
+      "VN",
+      "JP",
+      "KR",
+      "US"
+    ],
+    "domains": [
+      "bilibili.tv",
+      "bilibili.com",
+      "bilivideo.com",
+      "biliintl.com"
+    ]
+  },
+  {
+    "id": "iqiyi-intl",
+    "name": "iQIYI 国际版",
+    "name_zh": "爱奇艺国际",
+    "category": "流媒体",
+    "regions_available": [
+      "HK",
+      "TW",
+      "SG",
+      "MY",
+      "TH",
+      "PH",
+      "ID",
+      "VN",
+      "JP",
+      "KR",
+      "US"
+    ],
+    "domains": [
+      "iq.com",
+      "iqiyi.com",
+      "iqiyipic.com"
+    ]
+  },
+  {
+    "id": "wetv",
+    "name": "WeTV",
+    "name_zh": "腾讯 WeTV",
+    "category": "流媒体",
+    "regions_available": [
+      "HK",
+      "TW",
+      "SG",
+      "MY",
+      "TH",
+      "PH",
+      "ID",
+      "VN",
+      "JP",
+      "KR"
+    ],
+    "domains": [
+      "wetv.vip",
+      "wetvinfo.com",
+      "iflix.com"
+    ]
+  },
+  {
+    "id": "viu",
+    "name": "Viu",
+    "name_zh": "Viu",
+    "category": "香港专区",
+    "regions_available": [
+      "HK",
+      "SG",
+      "MY",
+      "TH",
+      "PH",
+      "ID",
+      "IN",
+      "AE",
+      "ZA"
+    ],
+    "domains": [
+      "viu.com",
+      "viu.tv"
+    ]
+  },
+  {
+    "id": "linetv",
+    "name": "LINE TV",
+    "name_zh": "LINE TV",
+    "category": "台湾专区",
+    "regions_available": [
+      "TH",
+      "TW",
+      "JP"
+    ],
+    "domains": [
+      "tv.line.me",
+      "line.me",
+      "linetv.tw"
+    ]
+  },
+  {
+    "id": "abematv",
+    "name": "AbemaTV",
+    "name_zh": "AbemaTV",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "abema.tv",
+      "abema.io",
+      "ameba.jp"
+    ]
+  },
+  {
+    "id": "unext",
+    "name": "U-NEXT",
+    "name_zh": "U-NEXT",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "video.unext.jp",
+      "unext.jp"
+    ]
+  },
+  {
+    "id": "dmm",
+    "name": "DMM TV",
+    "name_zh": "DMM",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "dmm.com",
+      "dmm.co.jp"
+    ]
+  },
+  {
+    "id": "hulujp",
+    "name": "Hulu Japan",
+    "name_zh": "Hulu 日本",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "hulu.jp"
+    ]
+  },
+  {
+    "id": "tver",
+    "name": "TVer",
+    "name_zh": "TVer",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "tver.jp"
+    ]
+  },
+  {
+    "id": "daznjp",
+    "name": "DAZN Japan",
+    "name_zh": "DAZN 日本",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "dazn.com",
+      "dazn.co.jp"
+    ]
+  },
+  {
+    "id": "nbaleaguepass",
+    "name": "NBA League Pass",
+    "name_zh": "NBA 联盟通行证",
+    "category": "其他",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "CA",
+      "AU",
+      "BR",
+      "MX",
+      "PH",
+      "IN"
+    ],
+    "domains": [
+      "nba.com",
+      "nbaevents.com"
+    ]
+  },
+  {
+    "id": "f1tv",
+    "name": "F1 TV",
+    "name_zh": "F1 TV",
+    "category": "其他",
+    "regions_available": [
+      "US",
+      "GB",
+      "NL",
+      "DE",
+      "FR",
+      "JP",
+      "SG",
+      "AU",
+      "CA",
+      "BR",
+      "MX",
+      "AT"
+    ],
+    "domains": [
+      "f1tv.formula1.com",
+      "formula1.com"
+    ]
+  },
+  {
+    "id": "skysports",
+    "name": "Sky Sports",
+    "name_zh": "天空体育",
+    "category": "其他",
+    "regions_available": [
+      "GB",
+      "DE",
+      "AT"
+    ],
+    "domains": [
+      "skysports.com",
+      "sky.com",
+      "skysportsa.com"
+    ]
+  },
+  {
+    "id": "beinsports",
+    "name": "beIN Sports",
+    "name_zh": "beIN 体育",
+    "category": "其他",
+    "regions_available": [
+      "US",
+      "GB",
+      "FR",
+      "TR",
+      "AE",
+      "SG",
+      "HK",
+      "AU"
+    ],
+    "domains": [
+      "beinsports.com",
+      "bein.com"
+    ]
+  },
+  {
+    "id": "paramount",
+    "name": "Paramount Network",
+    "name_zh": "派拉蒙电视网",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB"
+    ],
+    "domains": [
+      "paramountnetwork.com"
+    ]
+  },
+  {
+    "id": "showtime",
+    "name": "Showtime",
+    "name_zh": "Showtime",
+    "category": "流媒体",
+    "regions_available": [
+      "US"
+    ],
+    "domains": [
+      "showtime.com",
+      "sho.com"
+    ]
+  },
+  {
+    "id": "starz",
+    "name": "STARZ",
+    "name_zh": "STARZ",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA"
+    ],
+    "domains": [
+      "starz.com",
+      "starzplay.com"
+    ]
+  },
+  {
+    "id": "amcplus",
+    "name": "AMC+",
+    "name_zh": "AMC+",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "amcplus.com",
+      "amc.com"
+    ]
+  },
+  {
+    "id": "britbox",
+    "name": "BritBox",
+    "name_zh": "BritBox",
+    "category": "流媒体",
+    "regions_available": [
+      "GB",
+      "US",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "britbox.com",
+      "britbox.co.uk"
+    ]
+  },
+  {
+    "id": "acorntv",
+    "name": "Acorn TV",
+    "name_zh": "Acorn TV",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "acorn.tv",
+      "acorntv.com"
+    ]
+  },
+  {
+    "id": "mubi",
+    "name": "MUBI",
+    "name_zh": "MUBI",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "JP",
+      "DE",
+      "FR",
+      "IN",
+      "BR",
+      "MX",
+      "TR"
+    ],
+    "domains": [
+      "mubi.com"
+    ]
+  },
+  {
+    "id": "criterion",
+    "name": "Criterion Channel",
+    "name_zh": "标准收藏频道",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "CA"
+    ],
+    "domains": [
+      "criterionchannel.com",
+      "criterion.com"
+    ]
+  },
+  {
+    "id": "shudder",
+    "name": "Shudder",
+    "name_zh": "Shudder",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "shudder.com"
+    ]
+  },
+  {
+    "id": "sundance",
+    "name": "Sundance Now",
+    "name_zh": "圣丹斯 Now",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA"
+    ],
+    "domains": [
+      "sundancenow.com"
+    ]
+  },
+  {
+    "id": "discoveryplus",
+    "name": "Discovery+",
+    "name_zh": "探索+",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU",
+      "IN",
+      "BR",
+      "MX",
+      "DE",
+      "NL",
+      "PH"
+    ],
+    "domains": [
+      "discoveryplus.com",
+      "discovery.com"
+    ]
+  },
+  {
+    "id": "mgmplus",
+    "name": "MGM+",
+    "name_zh": "MGM+",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA"
+    ],
+    "domains": [
+      "mgmplus.com",
+      "epix.com"
+    ]
+  },
+  {
+    "id": "hallmark",
+    "name": "Hallmark+",
+    "name_zh": "Hallmark+",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "CA"
+    ],
+    "domains": [
+      "hallmark.com",
+      "hallmarkplus.com"
+    ]
+  },
+  {
+    "id": "betplus",
+    "name": "BET+",
+    "name_zh": "BET+",
+    "category": "流媒体",
+    "regions_available": [
+      "US"
+    ],
+    "domains": [
+      "bet.plus",
+      "bet.com"
+    ]
+  },
+  {
+    "id": "philo",
+    "name": "Philo",
+    "name_zh": "Philo",
+    "category": "流媒体",
+    "regions_available": [
+      "US"
+    ],
+    "domains": [
+      "philo.com"
+    ]
+  },
+  {
+    "id": "slingtv",
+    "name": "Sling TV",
+    "name_zh": "Sling TV",
+    "category": "流媒体",
+    "regions_available": [
+      "US"
+    ],
+    "domains": [
+      "sling.com",
+      "slingtv.com"
+    ]
+  },
+  {
+    "id": "fubotv",
+    "name": "FuboTV",
+    "name_zh": "FuboTV",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "CA",
+      "GB"
+    ],
+    "domains": [
+      "fubo.tv",
+      "fubo.com"
+    ]
+  },
+  {
+    "id": "directv",
+    "name": "DirecTV Stream",
+    "name_zh": "DirecTV Stream",
+    "category": "流媒体",
+    "regions_available": [
+      "US"
+    ],
+    "domains": [
+      "directv.com",
+      "directvstream.com"
+    ]
+  },
+  {
+    "id": "youtubetv",
+    "name": "YouTube TV",
+    "name_zh": "YouTube TV",
+    "category": "流媒体",
+    "regions_available": [
+      "US"
+    ],
+    "domains": [
+      "tv.youtube.com",
+      "youtube.com"
+    ]
+  },
+  {
+    "id": "plutotv",
+    "name": "Pluto TV",
+    "name_zh": "Pluto TV",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "pluto.tv",
+      "plutotv.com"
+    ]
+  },
+  {
+    "id": "tubitv",
+    "name": "Tubi",
+    "name_zh": "Tubi",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU",
+      "MX"
+    ],
+    "domains": [
+      "tubitv.com",
+      "tubi.tv"
+    ]
+  },
+  {
+    "id": "roku",
+    "name": "The Roku Channel",
+    "name_zh": "Roku 频道",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "MX"
+    ],
+    "domains": [
+      "therokuchannel.com",
+      "roku.com"
+    ]
+  },
+  {
+    "id": "vix",
+    "name": "ViX",
+    "name_zh": "ViX",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "MX",
+      "BR",
+      "AR"
+    ],
+    "domains": [
+      "vix.com"
+    ]
+  },
+  {
+    "id": "globoplay",
+    "name": "Globoplay",
+    "name_zh": "Globoplay",
+    "category": "流媒体",
+    "regions_available": [
+      "BR"
+    ],
+    "domains": [
+      "globoplay.globo.com",
+      "globo.com"
+    ]
+  },
+  {
+    "id": "clarovideo",
+    "name": "Claro Video",
+    "name_zh": "Claro Video",
+    "category": "流媒体",
+    "regions_available": [
+      "MX",
+      "BR",
+      "AR"
+    ],
+    "domains": [
+      "clarovideo.com"
+    ]
+  },
+  {
+    "id": "movistarplus",
+    "name": "Movistar Plus+",
+    "name_zh": "Movistar Plus+",
+    "category": "流媒体",
+    "regions_available": [
+      "ES",
+      "MX",
+      "AR"
+    ],
+    "domains": [
+      "movistarplus.es",
+      "movistar.com"
+    ]
+  },
+  {
+    "id": "canalplus",
+    "name": "Canal+",
+    "name_zh": "Canal+",
+    "category": "流媒体",
+    "regions_available": [
+      "FR",
+      "PL"
+    ],
+    "domains": [
+      "canalplus.com",
+      "canal-plus.com"
+    ]
+  },
+  {
+    "id": "skygo",
+    "name": "Sky Go",
+    "name_zh": "Sky Go",
+    "category": "流媒体",
+    "regions_available": [
+      "GB",
+      "DE",
+      "AT"
+    ],
+    "domains": [
+      "sky.com",
+      "skygo.co.nz"
+    ]
+  },
+  {
+    "id": "nowtv",
+    "name": "NOW TV",
+    "name_zh": "NOW",
+    "category": "流媒体",
+    "regions_available": [
+      "GB",
+      "DE",
+      "AT"
+    ],
+    "domains": [
+      "nowtv.com",
+      "now.com"
+    ]
+  },
+  {
+    "id": "joyn",
+    "name": "Joyn",
+    "name_zh": "Joyn",
+    "category": "流媒体",
+    "regions_available": [
+      "DE",
+      "AT"
+    ],
+    "domains": [
+      "joyn.de"
+    ]
+  },
+  {
+    "id": "rtlplus",
+    "name": "RTL+",
+    "name_zh": "RTL+",
+    "category": "流媒体",
+    "regions_available": [
+      "DE"
+    ],
+    "domains": [
+      "rtlplus.de",
+      "rtl.de"
+    ]
+  },
+  {
+    "id": "wowtv",
+    "name": "WOW (Sky DE)",
+    "name_zh": "WOW",
+    "category": "流媒体",
+    "regions_available": [
+      "DE",
+      "AT"
+    ],
+    "domains": [
+      "wowtv.de",
+      "sky.de"
+    ]
+  },
+  {
+    "id": "viaplay",
+    "name": "Viaplay",
+    "name_zh": "Viaplay",
+    "category": "流媒体",
+    "regions_available": [
+      "GB",
+      "NL",
+      "PL",
+      "SE",
+      "DK",
+      "NO",
+      "FI"
+    ],
+    "domains": [
+      "viaplay.com",
+      "viaplay.se"
+    ]
+  },
+  {
+    "id": "cmore",
+    "name": "C More",
+    "name_zh": "C More",
+    "category": "流媒体",
+    "regions_available": [
+      "SE",
+      "DK",
+      "NO",
+      "FI"
+    ],
+    "domains": [
+      "cmore.se",
+      "cmore.fi"
+    ]
+  },
+  {
+    "id": "tv4play",
+    "name": "TV4 Play",
+    "name_zh": "TV4 Play",
+    "category": "流媒体",
+    "regions_available": [
+      "SE"
+    ],
+    "domains": [
+      "tv4play.se",
+      "tv4.se"
+    ]
+  },
+  {
+    "id": "nrk",
+    "name": "NRK TV",
+    "name_zh": "NRK",
+    "category": "流媒体",
+    "regions_available": [
+      "NO"
+    ],
+    "domains": [
+      "nrk.no",
+      "nrktv.no"
+    ]
+  },
+  {
+    "id": "dr",
+    "name": "DR TV",
+    "name_zh": "DR",
+    "category": "流媒体",
+    "regions_available": [
+      "DK"
+    ],
+    "domains": [
+      "dr.dk"
+    ]
+  },
+  {
+    "id": "svtplay",
+    "name": "SVT Play",
+    "name_zh": "SVT Play",
+    "category": "流媒体",
+    "regions_available": [
+      "SE"
+    ],
+    "domains": [
+      "svtplay.se",
+      "svt.se"
+    ]
+  },
+  {
+    "id": "yle",
+    "name": "Yle Areena",
+    "name_zh": "Yle Areena",
+    "category": "流媒体",
+    "regions_available": [
+      "FI"
+    ],
+    "domains": [
+      "yle.fi",
+      "areena.yle.fi"
+    ]
+  },
+  {
+    "id": "sbs",
+    "name": "SBS On Demand",
+    "name_zh": "SBS",
+    "category": "流媒体",
+    "regions_available": [
+      "AU"
+    ],
+    "domains": [
+      "sbs.com.au",
+      "sbs.co.au"
+    ]
+  },
+  {
+    "id": "abciview",
+    "name": "ABC iview",
+    "name_zh": "ABC iview",
+    "category": "流媒体",
+    "regions_available": [
+      "AU"
+    ],
+    "domains": [
+      "iview.abc.net.au",
+      "abc.net.au"
+    ]
+  },
+  {
+    "id": "stan",
+    "name": "Stan",
+    "name_zh": "Stan",
+    "category": "流媒体",
+    "regions_available": [
+      "AU"
+    ],
+    "domains": [
+      "stan.com.au"
+    ]
+  },
+  {
+    "id": "binge",
+    "name": "Binge",
+    "name_zh": "Binge",
+    "category": "流媒体",
+    "regions_available": [
+      "AU"
+    ],
+    "domains": [
+      "binge.com.au"
+    ]
+  },
+  {
+    "id": "foxtel",
+    "name": "Foxtel Now",
+    "name_zh": "Foxtel Now",
+    "category": "流媒体",
+    "regions_available": [
+      "AU"
+    ],
+    "domains": [
+      "foxtel.com.au",
+      "foxtelgo.com.au"
+    ]
+  },
+  {
+    "id": "kayo",
+    "name": "Kayo Sports",
+    "name_zh": "Kayo 体育",
+    "category": "其他",
+    "regions_available": [
+      "AU"
+    ],
+    "domains": [
+      "kayosports.com.au"
+    ]
+  },
+  {
+    "id": "optus",
+    "name": "Optus Sport",
+    "name_zh": "Optus 体育",
+    "category": "其他",
+    "regions_available": [
+      "AU"
+    ],
+    "domains": [
+      "optus.com.au",
+      "optussport.com.au"
+    ]
+  },
+  {
+    "id": "hotstar",
+    "name": "Disney+ Hotstar",
+    "name_zh": "Disney+ Hotstar",
+    "category": "流媒体",
+    "regions_available": [
+      "IN",
+      "ID",
+      "TH",
+      "MY",
+      "SG"
+    ],
+    "domains": [
+      "hotstar.com",
+      "disneyplushotstar.com"
+    ]
+  },
+  {
+    "id": "jiocinema",
+    "name": "JioCinema",
+    "name_zh": "JioCinema",
+    "category": "流媒体",
+    "regions_available": [
+      "IN"
+    ],
+    "domains": [
+      "jiocinema.com"
+    ]
+  },
+  {
+    "id": "sonyliv",
+    "name": "SonyLIV",
+    "name_zh": "SonyLIV",
+    "category": "流媒体",
+    "regions_available": [
+      "IN"
+    ],
+    "domains": [
+      "sonyliv.com"
+    ]
+  },
+  {
+    "id": "zee5",
+    "name": "ZEE5",
+    "name_zh": "ZEE5",
+    "category": "流媒体",
+    "regions_available": [
+      "IN",
+      "US",
+      "GB",
+      "CA",
+      "AU",
+      "SG",
+      "AE"
+    ],
+    "domains": [
+      "zee5.com"
+    ]
+  },
+  {
+    "id": "mxplayer",
+    "name": "MX Player",
+    "name_zh": "MX Player",
+    "category": "流媒体",
+    "regions_available": [
+      "IN"
+    ],
+    "domains": [
+      "mxplayer.in"
+    ]
+  },
+  {
+    "id": "voot",
+    "name": "JioCinema / Voot",
+    "name_zh": "Voot",
+    "category": "流媒体",
+    "regions_available": [
+      "IN"
+    ],
+    "domains": [
+      "voot.com"
+    ]
+  },
+  {
+    "id": "aha",
+    "name": "aha",
+    "name_zh": "aha",
+    "category": "流媒体",
+    "regions_available": [
+      "IN"
+    ],
+    "domains": [
+      "aha.video"
+    ]
+  },
+  {
+    "id": "sunnxt",
+    "name": "Sun NXT",
+    "name_zh": "Sun NXT",
+    "category": "流媒体",
+    "regions_available": [
+      "IN"
+    ],
+    "domains": [
+      "sunnxt.com"
+    ]
+  },
+  {
+    "id": "tvn",
+    "name": "tvN Asia",
+    "name_zh": "tvN Asia",
+    "category": "流媒体",
+    "regions_available": [
+      "HK",
+      "SG",
+      "MY",
+      "PH",
+      "ID",
+      "TH"
+    ],
+    "domains": [
+      "tvn.asia"
+    ]
+  },
+  {
+    "id": "kocowa",
+    "name": "Kocowa",
+    "name_zh": "Kocowa",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "CA",
+      "GB",
+      "AU"
+    ],
+    "domains": [
+      "kocowa.com"
+    ]
+  },
+  {
+    "id": "viki",
+    "name": "Viki",
+    "name_zh": "Viki",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "JP",
+      "KR",
+      "SG",
+      "HK",
+      "TW",
+      "CA",
+      "AU",
+      "GB"
+    ],
+    "domains": [
+      "viki.com"
+    ]
+  },
+  {
+    "id": "wavve",
+    "name": "Wavve",
+    "name_zh": "Wavve",
+    "category": "流媒体",
+    "regions_available": [
+      "KR"
+    ],
+    "domains": [
+      "wavve.com"
+    ]
+  },
+  {
+    "id": "tving",
+    "name": "TVING",
+    "name_zh": "TVING",
+    "category": "流媒体",
+    "regions_available": [
+      "KR"
+    ],
+    "domains": [
+      "tving.com"
+    ]
+  },
+  {
+    "id": "coupangplay",
+    "name": "Coupang Play",
+    "name_zh": "Coupang Play",
+    "category": "流媒体",
+    "regions_available": [
+      "KR"
+    ],
+    "domains": [
+      "coupangplay.com"
+    ]
+  },
+  {
+    "id": "watcha",
+    "name": "WATCHA",
+    "name_zh": "WATCHA",
+    "category": "流媒体",
+    "regions_available": [
+      "KR"
+    ],
+    "domains": [
+      "watcha.com"
+    ]
+  },
+  {
+    "id": "pikotv",
+    "name": "Piko TV",
+    "name_zh": "Piko TV",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "piko-tv.com"
+    ]
+  },
+  {
+    "id": "gyao",
+    "name": "GYAO!",
+    "name_zh": "GYAO!",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "gyao.yahoo.co.jp"
+    ]
+  },
+  {
+    "id": "paravi",
+    "name": "Paravi",
+    "name_zh": "Paravi",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "paravi.jp"
+    ]
+  },
+  {
+    "id": "lemino",
+    "name": "Lemino",
+    "name_zh": "Lemino",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "lemino.docomo.ne.jp"
+    ]
+  },
+  {
+    "id": "dtv",
+    "name": "dTV",
+    "name_zh": "dTV",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "video.dmkt-sp.jp",
+      "dtv.jp"
+    ]
+  },
+  {
+    "id": "fod",
+    "name": "FOD",
+    "name_zh": "FOD",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "fod.fujitv.co.jp"
+    ]
+  },
+  {
+    "id": "telasa",
+    "name": "TELASA",
+    "name_zh": "TELASA",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "telasa.jp"
+    ]
+  },
+  {
+    "id": "netflix-jp-anime",
+    "name": "Netflix Anime JP",
+    "name_zh": "Netflix 日本动画",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "netflix.com",
+      "nflxvideo.net"
+    ]
+  },
+  {
+    "id": "animelab",
+    "name": "AnimeLab",
+    "name_zh": "AnimeLab",
+    "category": "流媒体",
+    "regions_available": [
+      "AU"
+    ],
+    "domains": [
+      "animelab.com"
+    ]
+  },
+  {
+    "id": "hidive",
+    "name": "HIDIVE",
+    "name_zh": "HIDIVE",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "hidive.com"
+    ]
+  },
+  {
+    "id": "retrocrush",
+    "name": "RetroCrush",
+    "name_zh": "RetroCrush",
+    "category": "流媒体",
+    "regions_available": [
+      "US"
+    ],
+    "domains": [
+      "retrocrush.tv"
+    ]
+  },
+  {
+    "id": "midnightpulp",
+    "name": "Midnight Pulp",
+    "name_zh": "Midnight Pulp",
+    "category": "流媒体",
+    "regions_available": [
+      "US"
+    ],
+    "domains": [
+      "midnightpulp.com"
+    ]
+  },
+  {
+    "id": "asiancrush",
+    "name": "AsianCrush",
+    "name_zh": "AsianCrush",
+    "category": "流媒体",
+    "regions_available": [
+      "US"
+    ],
+    "domains": [
+      "asiancrush.com"
+    ]
+  },
+  {
+    "id": "youtubemusic",
+    "name": "YouTube Music",
+    "name_zh": "油管音乐",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "KR",
+      "SG",
+      "GB",
+      "DE",
+      "FR",
+      "IN",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "VN",
+      "BR",
+      "MX",
+      "TR",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "music.youtube.com",
+      "youtube.com"
+    ]
+  },
+  {
+    "id": "applemusic",
+    "name": "Apple Music",
+    "name_zh": "苹果音乐",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "IN"
+    ],
+    "domains": [
+      "music.apple.com"
+    ]
+  },
+  {
+    "id": "tidal",
+    "name": "TIDAL",
+    "name_zh": "TIDAL",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "JP",
+      "DE",
+      "FR",
+      "NL",
+      "CA",
+      "AU",
+      "BR",
+      "MX",
+      "KR"
+    ],
+    "domains": [
+      "tidal.com"
+    ]
+  },
+  {
+    "id": "deezer",
+    "name": "Deezer",
+    "name_zh": "Deezer",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "JP",
+      "KR",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "deezer.com"
+    ]
+  },
+  {
+    "id": "pandora",
+    "name": "Pandora",
+    "name_zh": "Pandora",
+    "category": "流媒体",
+    "regions_available": [
+      "US"
+    ],
+    "domains": [
+      "pandora.com"
+    ]
+  },
+  {
+    "id": "iheartradio",
+    "name": "iHeartRadio",
+    "name_zh": "iHeartRadio",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "CA",
+      "AU",
+      "NZ"
+    ],
+    "domains": [
+      "iheart.com"
+    ]
+  },
+  {
+    "id": "siriusxm",
+    "name": "SiriusXM",
+    "name_zh": "SiriusXM",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "CA"
+    ],
+    "domains": [
+      "siriusxm.com"
+    ]
+  },
+  {
+    "id": "audible",
+    "name": "Audible",
+    "name_zh": "Audible",
+    "category": "流媒体",
+    "regions_available": [
+      "US",
+      "GB",
+      "JP",
+      "DE",
+      "FR",
+      "CA",
+      "AU",
+      "IN",
+      "BR"
+    ],
+    "domains": [
+      "audible.com",
+      "audible.co.uk"
+    ]
+  },
+  {
+    "id": "openai-api",
+    "name": "OpenAI API",
+    "name_zh": "OpenAI API",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "api.openai.com",
+      "openai.com"
+    ]
+  },
+  {
+    "id": "copilot",
+    "name": "Microsoft Copilot",
+    "name_zh": "微软 Copilot",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "copilot.microsoft.com"
+    ]
+  },
+  {
+    "id": "perplexity",
+    "name": "Perplexity",
+    "name_zh": "Perplexity",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "perplexity.ai"
+    ]
+  },
+  {
+    "id": "midjourney",
+    "name": "Midjourney",
+    "name_zh": "Midjourney",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "midjourney.com",
+      "cdn.midjourney.com"
+    ]
+  },
+  {
+    "id": "leonardo",
+    "name": "Leonardo AI",
+    "name_zh": "Leonardo AI",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "leonardo.ai"
+    ]
+  },
+  {
+    "id": "runway",
+    "name": "Runway",
+    "name_zh": "Runway",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "runwayml.com"
+    ]
+  },
+  {
+    "id": "notion-ai",
+    "name": "Notion AI",
+    "name_zh": "Notion AI",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "notion.so",
+      "notion.com"
+    ]
+  },
+  {
+    "id": "figma",
+    "name": "Figma",
+    "name_zh": "Figma",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "figma.com"
+    ]
+  },
+  {
+    "id": "discord",
+    "name": "Discord",
+    "name_zh": "Discord",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "IN"
+    ],
+    "domains": [
+      "discord.com",
+      "discordapp.com",
+      "discord.gg"
+    ]
+  },
+  {
+    "id": "telegram",
+    "name": "Telegram",
+    "name_zh": "Telegram",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "IN"
+    ],
+    "domains": [
+      "telegram.org",
+      "t.me"
+    ]
+  },
+  {
+    "id": "whatsapp",
+    "name": "WhatsApp",
+    "name_zh": "WhatsApp",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "IN"
+    ],
+    "domains": [
+      "whatsapp.com",
+      "whatsapp.net"
+    ]
+  },
+  {
+    "id": "snapchat",
+    "name": "Snapchat",
+    "name_zh": "Snapchat",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "snapchat.com"
+    ]
+  },
+  {
+    "id": "reddit",
+    "name": "Reddit",
+    "name_zh": "Reddit",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "IN"
+    ],
+    "domains": [
+      "reddit.com",
+      "redd.it"
+    ]
+  },
+  {
+    "id": "pinterest",
+    "name": "Pinterest",
+    "name_zh": "Pinterest",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "pinterest.com"
+    ]
+  },
+  {
+    "id": "linkedin",
+    "name": "LinkedIn",
+    "name_zh": "领英",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "IN"
+    ],
+    "domains": [
+      "linkedin.com",
+      "licdn.com"
+    ]
+  },
+  {
+    "id": "twitch",
+    "name": "Twitch",
+    "name_zh": "Twitch",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "TH",
+      "ID",
+      "MY",
+      "PH"
+    ],
+    "domains": [
+      "twitch.tv",
+      "ttvnw.net"
+    ]
+  },
+  {
+    "id": "kick",
+    "name": "Kick",
+    "name_zh": "Kick",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "kick.com"
+    ]
+  },
+  {
+    "id": "dailymotion",
+    "name": "Dailymotion",
+    "name_zh": "Dailymotion",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "GB",
+      "FR",
+      "DE",
+      "JP"
+    ],
+    "domains": [
+      "dailymotion.com"
+    ]
+  },
+  {
+    "id": "vimeo",
+    "name": "Vimeo",
+    "name_zh": "Vimeo",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "GB",
+      "JP",
+      "DE",
+      "FR",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "vimeo.com",
+      "vimeocdn.com"
+    ]
+  },
+  {
+    "id": "onlyfans",
+    "name": "OnlyFans",
+    "name_zh": "OnlyFans",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "onlyfans.com"
+    ]
+  },
+  {
+    "id": "pornhub",
+    "name": "Pornhub",
+    "name_zh": "Pornhub",
+    "category": "其他",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "pornhub.com",
+      "phncdn.com"
+    ]
+  },
+  {
+    "id": "xvideos",
+    "name": "XVideos",
+    "name_zh": "XVideos",
+    "category": "其他",
+    "regions_available": [
+      "US",
+      "GB",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "xvideos.com"
+    ]
+  },
+  {
+    "id": "steam",
+    "name": "Steam",
+    "name_zh": "Steam",
+    "category": "其他",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "IN",
+      "TR",
+      "AR"
+    ],
+    "domains": [
+      "steampowered.com",
+      "steamcommunity.com"
+    ]
+  },
+  {
+    "id": "epicgames",
+    "name": "Epic Games",
+    "name_zh": "Epic Games",
+    "category": "其他",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "epicgames.com"
+    ]
+  },
+  {
+    "id": "playstation",
+    "name": "PlayStation Network",
+    "name_zh": "PlayStation",
+    "category": "其他",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "playstation.com",
+      "sonyentertainmentnetwork.com"
+    ]
+  },
+  {
+    "id": "xboxlive",
+    "name": "Xbox Live",
+    "name_zh": "Xbox Live",
+    "category": "其他",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "xbox.com",
+      "xboxlive.com"
+    ]
+  },
+  {
+    "id": "nintendo",
+    "name": "Nintendo Switch Online",
+    "name_zh": "任天堂",
+    "category": "其他",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX"
+    ],
+    "domains": [
+      "nintendo.com",
+      "nintendo.co.jp"
+    ]
+  },
+  {
+    "id": "chatgpt-plus",
+    "name": "ChatGPT Plus",
+    "name_zh": "ChatGPT Plus",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "chatgpt.com",
+      "openai.com"
+    ]
+  },
+  {
+    "id": "grok",
+    "name": "Grok / X AI",
+    "name_zh": "Grok",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "grok.com",
+      "x.ai"
+    ]
+  },
+  {
+    "id": "meta-ai",
+    "name": "Meta AI",
+    "name_zh": "Meta AI",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "meta.ai"
+    ]
+  },
+  {
+    "id": "suno",
+    "name": "Suno AI",
+    "name_zh": "Suno AI",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "suno.com",
+      "suno.ai"
+    ]
+  },
+  {
+    "id": "udio",
+    "name": "Udio",
+    "name_zh": "Udio",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "udio.com"
+    ]
+  },
+  {
+    "id": "threads",
+    "name": "Threads",
+    "name_zh": "Threads",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "SG",
+      "GB",
+      "KR",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "NL",
+      "BR",
+      "MX",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "IN"
+    ],
+    "domains": [
+      "threads.net"
+    ]
+  },
+  {
+    "id": "xiaohongshu",
+    "name": "Xiaohongshu Intl",
+    "name_zh": "小红书国际版",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "HK",
+      "TW",
+      "SG",
+      "MY",
+      "US",
+      "CA",
+      "AU",
+      "JP",
+      "KR"
+    ],
+    "domains": [
+      "xiaohongshu.com"
+    ]
+  },
+  {
+    "id": "weibo-intl",
+    "name": "Weibo Intl",
+    "name_zh": "微博国际版",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "HK",
+      "TW",
+      "SG",
+      "MY",
+      "US",
+      "CA",
+      "AU",
+      "JP",
+      "KR"
+    ],
+    "domains": [
+      "weibo.com",
+      "weibo.cn"
+    ]
+  },
+  {
+    "id": "youtube",
+    "name": "YouTube",
+    "name_zh": "油管",
+    "category": "社交与娱乐",
+    "regions_available": [
+      "US",
+      "JP",
+      "HK",
+      "TW",
+      "KR",
+      "SG",
+      "GB",
+      "DE",
+      "FR",
+      "IN",
+      "TH",
+      "ID",
+      "MY",
+      "PH",
+      "VN",
+      "BR",
+      "MX",
+      "TR",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "youtube.com",
+      "youtu.be"
+    ]
+  },
+  {
+    "id": "character-ai",
+    "name": "Character.AI",
+    "name_zh": "Character.AI",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "character.ai"
+    ]
+  },
+  {
+    "id": "poe",
+    "name": "Poe",
+    "name_zh": "Poe",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "poe.com"
+    ]
+  },
+  {
+    "id": "cursor",
+    "name": "Cursor",
+    "name_zh": "Cursor",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "cursor.com"
+    ]
+  },
+  {
+    "id": "tvb",
+    "name": "TVB",
+    "name_zh": "TVB 无线",
+    "category": "香港专区",
+    "regions_available": [
+      "HK"
+    ],
+    "domains": [
+      "tvb.com"
+    ]
+  },
+  {
+    "id": "mytvsuper",
+    "name": "myTV SUPER",
+    "name_zh": "myTV SUPER",
+    "category": "香港专区",
+    "regions_available": [
+      "HK"
+    ],
+    "domains": [
+      "mytvsuper.com"
+    ]
+  },
+  {
+    "id": "friday",
+    "name": "friDay 影音",
+    "name_zh": "friDay 影音",
+    "category": "台湾专区",
+    "regions_available": [
+      "TW"
+    ],
+    "domains": [
+      "video.friday.tw"
+    ]
+  },
+  {
+    "id": "kktv",
+    "name": "KKTV",
+    "name_zh": "KKTV",
+    "category": "台湾专区",
+    "regions_available": [
+      "TW"
+    ],
+    "domains": [
+      "kktv.me"
+    ]
+  },
+  {
+    "id": "litv",
+    "name": "LiTV",
+    "name_zh": "LiTV",
+    "category": "台湾专区",
+    "regions_available": [
+      "TW"
+    ],
+    "domains": [
+      "litv.tv"
+    ]
+  },
+  {
+    "id": "hamivideo",
+    "name": "Hami Video",
+    "name_zh": "Hami Video",
+    "category": "台湾专区",
+    "regions_available": [
+      "TW"
+    ],
+    "domains": [
+      "hamivideo.hinet.net"
+    ]
+  },
+  {
+    "id": "catchplay",
+    "name": "CatchPlay+",
+    "name_zh": "CatchPlay+",
+    "category": "台湾专区",
+    "regions_available": [
+      "TW",
+      "HK",
+      "SG",
+      "MY",
+      "ID"
+    ],
+    "domains": [
+      "catchplay.com"
+    ]
+  },
+  {
+    "id": "nicovideo",
+    "name": "Niconico",
+    "name_zh": "Niconico",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "nicovideo.jp"
+    ]
+  },
+  {
+    "id": "wowow",
+    "name": "WOWOW",
+    "name_zh": "WOWOW",
+    "category": "日本专区",
+    "regions_available": [
+      "JP"
+    ],
+    "domains": [
+      "wowow.co.jp"
+    ]
+  },
+  {
+    "id": "sora",
+    "name": "Sora",
+    "name_zh": "Sora",
+    "category": "AI 服务",
+    "regions_available": [
+      "US",
+      "JP",
+      "SG",
+      "GB",
+      "DE",
+      "NL",
+      "KR",
+      "HK",
+      "TW",
+      "CA",
+      "AU"
+    ],
+    "domains": [
+      "sora.com"
+    ]
+  }
+]

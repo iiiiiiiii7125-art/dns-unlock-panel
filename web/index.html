@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DNS 分流解锁面板</title>
+<style>
+*{box-sizing:border-box}body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:#f5f6f8;color:#222}
+header{background:#111827;color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+header h1{font-size:18px;margin:0}header small{color:#9ca3af}
+main{max-width:1100px;margin:0 auto;padding:16px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:16px}
+h2{font-size:16px;margin:0 0 12px}h3{font-size:14px;margin:16px 0 8px}
+.stats{display:flex;gap:12px;flex-wrap:wrap}.stat{flex:1;min-width:120px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px}.stat b{font-size:22px;display:block}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;vertical-align:middle}
+th{background:#f9fafb}input,select,button{font-size:14px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;background:#fff}
+button{cursor:pointer;background:#111827;color:#fff;border-color:#111827}button.ghost{background:#fff;color:#111827}
+button.danger{background:#dc2626;border-color:#dc2626}button:disabled{opacity:.5}
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;background:#e5e7eb}
+.badge.ok{background:#dcfce7;color:#166534}.badge.bad{background:#fee2e2;color:#991b1b}.badge.dim{background:#f3f4f6;color:#6b7280}
+.muted{color:#6b7280;font-size:13px}.warn{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+code{background:#f3f4f6;padding:2px 6px;border-radius:4px;word-break:break-all}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}.tabs button{background:#fff;color:#111827}.tabs button.on{background:#111827;color:#fff}
+#login{max-width:420px;margin:80px auto}
+.hidden{display:none}
+input[type=checkbox]{width:auto}
+</style>
+</head>
+<body>
+<header><h1>DNS 分流解锁面板 <small>无日志 · DNS 复写 · 改规则 5 秒生效</small></h1><span><span id="ver" class="muted"></span> <button class="ghost" style="background:#fff;color:#111827" onclick="showChangePw()">改密码</button> <button class="ghost" style="background:#fff;color:#111827" onclick="doLogout()">退出</button></span></header>
+<main>
+<div id="login" class="card">
+  <h2>登录面板</h2>
+  <p class="muted">默认账号 <code>admin</code> / 密码 <code>admin</code>，首次登录后请立即改密码。</p>
+  <div class="row"><input id="username" placeholder="用户名" value="admin" style="flex:1"></div>
+  <div class="row"><input id="password" type="password" placeholder="密码" style="flex:1" onkeydown="if(event.key==='Enter')doLogin()"><button onclick="doLogin()">进入</button></div>
+  <p id="loginErr" class="muted" style="color:#dc2626"></p>
+</div>
+
+<div id="app" class="hidden">
+  <div id="changepw" class="card hidden">
+    <h2>修改密码</h2>
+    <p class="muted">改完后所有登录立即失效，需用新密码重新登录。</p>
+    <div class="row"><input id="oldpw" type="password" placeholder="旧密码"><input id="newpw" type="password" placeholder="新密码（至少 6 位）"><button onclick="doChangePw()">保存新密码</button><button class="ghost" onclick="$('changepw').classList.add('hidden')">取消</button></div>
+    <p id="pwErr" class="muted" style="color:#dc2626"></p>
+  </div>
+  <div class="warn">⚠️ 面板只做 <b>DNS 复写</b>：把流媒体域名解析到你填的解锁 IP。流量能不能解锁，取决于这个 IP 背后的服务器本身会不会转发该平台（SNI 代理 / 解锁服务）。<b>面板不会让任意 IP 凭空具备解锁能力</b>。解锁节点只是一条 IP 记录，不需要在那台机器上装任何东西。</div>
+
+  <div class="tabs">
+    <button id="tab-rules" class="on" onclick="showTab('rules')">分流规则</button>
+    <button id="tab-nodes" onclick="showTab('nodes')">🔒 私有解锁 IP</button>
+    <button id="tab-public" onclick="showTab('public')">🌐 公共解锁源</button>
+    <button id="tab-servers" onclick="showTab('servers')">DNS 服务器</button>
+    <button id="tab-events" onclick="showTab('events')">故障切换记录</button>
+    <button id="tab-checks" onclick="showTab('checks')">解锁自测</button>
+    <button id="tab-domains" onclick="showTab('domains')">自定义域名</button>
+  </div>
+
+  <div class="card"><div class="stats" id="stats"></div><p class="muted" id="cfgline"></p></div>
+
+  <div id="pane-rules" class="card">
+    <h2>分流规则 <span class="muted">— 每个平台选一个解锁 IP，保存后 5 秒内生效</span></h2>
+    <div class="row">
+      <input id="q" placeholder="搜索平台，如 netflix / 奈飞 / chatgpt" style="flex:1" oninput="renderRules()">
+      <select id="cat" onchange="renderRules()"><option value="">全部类别</option></select>
+      <label><input type="checkbox" id="onlySet" onchange="renderRules()"> 只看已设置</label>
+    </div>
+    <div class="row" id="chips">
+      <span class="muted">主用途：</span>
+      <button class="ghost" onclick="setCat('')">全部</button>
+      <button class="ghost" onclick="setCat('流媒体')">流媒体</button>
+      <button class="ghost" onclick="setCat('AI 服务')">AI 服务</button>
+      <button class="ghost" onclick="setCat('社交与娱乐')">社交与娱乐</button>
+      <button class="ghost" onclick="setCat('日本专区')">日本专区</button>
+      <button class="ghost" onclick="setCat('台湾专区')">台湾专区</button>
+      <button class="ghost" onclick="setCat('香港专区')">香港专区</button>
+      <button class="ghost" onclick="setCat('其他')">其他</button>
+    </div>
+    <table><thead><tr><th>平台</th><th>类别</th><th>模式 / 地区</th><th>解锁 IP（下拉选已有 / 直接手填）</th><th>备用与自动切换</th><th>当前生效 IP</th><th></th></tr></thead>
+    <tbody id="rulesBody"></tbody></table>
+  </div>
+
+  <div id="pane-nodes" class="card hidden">
+    <h2>🔒 私有解锁 IP <span class="muted">— 只是一条 IP 记录：填任意 IP 即可，不用在那台机器装 agent</span></h2>
+    <div class="warn">🔒 私有节点 IP 是敏感信息：列表默认打码（如 1.2.*.*），点“显示”才看完整 IP。未登录的接口（/install.sh、/dl/*）不含任何私有 IP；DNS agent 拉配置必须带每台机器的 token。原理：任何能用你 DNS 的人用 <code>dig</code> 就能看到返回的解锁 IP，所以 DNS 必须只对自己人开放（allowlist / 防火墙）。</div>
+    <div class="row">
+      <input id="n-name" placeholder="名称，如 香港-01"><input id="n-ip" placeholder="IP，如 203.0.113.10">
+      <select id="n-region"></select><input id="n-note" placeholder="备注（可选）">
+      <button onclick="addNode()">添加 IP</button>
+    </div>
+    <table><thead><tr><th>名称</th><th>IP</th><th>地区</th><th>状态</th><th>延迟</th><th>备注</th><th></th></tr></thead><tbody id="nodesBody"></tbody></table>
+  </div>
+
+  <div id="pane-public" class="card hidden">
+    <h2>🌐 公共解锁源 <span class="muted">— 第三方 SmartDNS 模板（与上方私有节点分开显示，互不混淆）</span></h2>
+    <div class="warn">⚠️ 没有放之四海的通用公共解锁 IP：这些服务都是“先注册、绑定自己 IP、再拿到分配的 DNS IP”。下面只放名称、官网、免费额度、覆盖地区——<b>不要轻信任何硬编的所谓公共解锁 IP</b>。注册拿到 DNS IP 后填进来，规则里用 <code>nameserver</code> 模式走它。</div>
+    <table><thead><tr><th>服务</th><th>官网</th><th>免费额度</th><th>覆盖地区</th><th>备注</th><th>我的 DNS IP（注册后填）</th></tr></thead><tbody id="publicBody"></tbody></table>
+  </div>
+
+  <div id="pane-servers" class="card hidden">
+    <h2>DNS 服务器 <span class="muted">— 在 VPS 上跑 <code>dnsunlock dns-agent</code> 的机器</span></h2>
+    <div class="warn">🔒 安全必读：DNS 53 绝不能对全网开放递归，否则会被用作 DNS 放大攻击源。公网部署务必二选一：① 把 allowlist 写进 600 配置文件（<code>/etc/dnsunlock/config.json</code> 里的 <code>allowlist</code> 项，如 "你的IP,192.168.1.0/24"，命令行与环境变量都不传）；② 防火墙只放行你自己的客户端 IP 访问 53 端口。sniproxy 同理：只放行被解锁机的 IP 访问 443。</div>
+    <p class="muted">一键安装命令（在目标 VPS 上执行，按提示输入 token 和 DNS 解锁 IP）：</p>
+    <p><code id="installCmd"></code> <button class="ghost" onclick="copyInstall()">复制</button></p>
+    <div class="row">
+      <input id="s-name" placeholder="服务器名称，如 美国-DNS-01"><input id="s-ip" placeholder="服务器 IP（可选）">
+      <input id="s-defip" placeholder="默认解锁 IP（可选，区域无可用节点时的备用）"><input id="s-allow" placeholder="allowlist（可选，如 203.0.113.7,192.168.1.0/24）"><button onclick="addServer()">登记服务器</button>
+    </div>
+    <p class="muted" id="srvToken" style="color:#166534"></p>
+    <table><thead><tr><th>名称</th><th>IP</th><th>默认解锁 IP</th><th>状态</th><th>最后在线</th><th>配置版本</th><th>server_id / agent token（装机用）</th><th></th></tr></thead><tbody id="serversBody"></tbody></table>
+    <h3>可选：把自己的 VPS 变成解锁节点（SNI 代理）</h3>
+    <p class="muted">面板和 DNS 分流本身不需要这一步。只有当你想让某台自己的 VPS 亲自做解锁出口时，才在那台机器上执行：<br><code id="unlockCmd"></code> <button class="ghost" onclick="copyUnlock()">复制</button></p>
+  </div>
+
+  <div id="pane-events" class="card hidden">
+    <h2>故障切换记录 <span class="muted">— 只有规则上明确开了“自动切备用 IP”才会自动切换；否则探活失败只标红</span></h2>
+    <table><thead><tr><th>时间</th><th>平台</th><th>地区</th><th>从</th><th>到</th><th>原因</th></tr></thead><tbody id="eventsBody"></tbody></table>
+  </div>
+
+  <div id="pane-checks" class="card hidden">
+    <h2>解锁自测 <span class="muted">— 手动核对清单（面板不做假检测：按下面方法亲自打开对应服务验证）</span></h2>
+    <table><thead><tr><th>平台</th><th>怎么测</th><th>怎样算解锁成功</th><th>链接</th></tr></thead><tbody id="checksBody"></tbody></table>
+  </div>
+
+  <div id="pane-domains" class="card hidden">
+    <h2>自定义域名 <span class="muted">— 平台库只收真正做地域判定的核心域名（2–8 个/平台，不收通用 CDN）；缺的域名自己加</span></h2>
+    <div class="row">
+      <select id="d-platform"></select><input id="d-domain" placeholder="域名，如 video.netflix.com（填后缀即可）"><button onclick="addDomain()">添加</button>
+    </div>
+    <div id="domainsList" class="muted"></div>
+  </div>
+</div>
+</main>
+<script>
+let TOKEN=sessionStorage.getItem('dnsunlock_session')||'';
+let REGIONS=[],NODES=[],RULES=[],SERVERS=[],PLATFORMS=[];
+const $=id=>document.getElementById(id);
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+async function api(path,opts={}){
+  opts.headers=Object.assign({'X-Session-Token':TOKEN,'Content-Type':'application/json'},opts.headers||{});
+  const r=await fetch(path,opts);
+  if(r.status===401){TOKEN='';sessionStorage.removeItem('dnsunlock_session');$('login').classList.remove('hidden');$('app').classList.add('hidden');throw new Error('请重新登录')}
+  if(r.status===403){const t=await r.text();let j;try{j=JSON.parse(t)}catch(e){j={error:t}};const e=new Error(j.error||'没有权限');if(j.must_change)e.mustChange=true;throw e}
+  if(r.status===409){const t=await r.text();let j;try{j=JSON.parse(t)}catch(e){j={error:t}};const e=new Error(j.error||'冲突');e.conflict=true;throw e}
+  if(r.status===429){throw new Error('登录失败次数过多，请 60 秒后再试')}
+  const t=await r.text(); try{return JSON.parse(t)}catch(e){return t}
+}
+async function doLogin(){
+  const u=$('username').value.trim(),pw=$('password').value;
+  const r=await fetch('/api/v1/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:pw})});
+  if(!r.ok){$('loginErr').textContent='用户名或密码错误';return}
+  const j=await r.json();TOKEN=j.session_token;sessionStorage.setItem('dnsunlock_session',TOKEN);
+  // N-06：首次登录必须先改密码——服务端已拒绝该 session 调任何管理接口，
+  // 所以先检查 must_change，只显示改密码卡片，不调用 init（它会 403）。
+  if(j.must_change){
+    $('login').classList.add('hidden');$('app').classList.remove('hidden');
+    $('changepw').classList.remove('hidden');
+    alert('首次登录：必须先改密码（默认 admin 不能继续用），改完后用新密码重新登录。');
+    return;
+  }
+  await init();
+}
+async function doLogout(){try{await api('/api/v1/logout',{method:'POST'})}catch(e){}TOKEN='';sessionStorage.removeItem('dnsunlock_session');$('login').classList.remove('hidden');$('app').classList.add('hidden')}
+function showChangePw(){$('changepw').classList.remove('hidden')}
+async function doChangePw(){
+  const o=$('oldpw').value,n=$('newpw').value;
+  try{await api('/api/v1/change-password',{method:'POST',body:JSON.stringify({old_password:o,new_password:n})});alert('密码已改，所有登录已失效，请用新密码重新登录。');doLogout()}
+  catch(e){$('pwErr').textContent=e.message}
+}
+function showTab(t){
+  for(const x of ['rules','nodes','public','servers','events','checks','domains']){$('pane-'+x).classList.toggle('hidden',x!==t);$('tab-'+x).classList.toggle('on',x===t)}
+  if(t==='events') loadEvents();
+  if(t==='checks') loadChecks();
+  if(t==='domains') loadDomains();
+  if(t==='public') loadPublic();
+}
+async function init(){
+  REGIONS=await api('/api/v1/regions');
+  const st=await api('/api/v1/status');
+  $('login').classList.add('hidden');$('app').classList.remove('hidden');
+  $('ver').textContent='配置版本 v'+st.config_version;
+  $('installCmd').textContent='curl -fsSL '+location.origin+'/install.sh | bash';
+  $('unlockCmd').textContent='curl -fsSL '+location.origin+'/install.sh | bash -s -- --unlock-node';
+  const rs=$('n-region');rs.innerHTML=REGIONS.map(r=>`<option value="${r.code}">${r.name} (${r.code})</option>`).join('');
+  await refresh();
+}
+async function refresh(){
+  const st=await api('/api/v1/status');
+  $('stats').innerHTML=`<div class="stat"><b>${st.nodes_online}/${st.nodes_total}</b>解锁 IP 在线</div><div class="stat"><b>${st.platforms_total}</b>平台</div><div class="stat"><b>${st.rules_total}</b>已设规则</div><div class="stat"><b>${st.servers_online}/${st.servers_total}</b>DNS 服务器在线</div>`;
+  $('cfgline').textContent='配置版本 v'+st.config_version+' · 上游 DNS '+st.upstream+' · 规则修改后 DNS agent 约 5 秒内生效';
+  NODES=await api('/api/v1/nodes');
+  RULES=await api('/api/v1/rules');
+  SERVERS=await api('/api/v1/servers');
+  PLATFORMS=RULES.map(r=>r.platform);
+  const CAT_ORDER=['流媒体','AI 服务','社交与娱乐','日本专区','台湾专区','香港专区','其他'];
+  const cats=[...new Set(PLATFORMS.map(p=>p.category))].sort((a,b)=>CAT_ORDER.indexOf(a)-CAT_ORDER.indexOf(b));
+  $('cat').innerHTML='<option value="">全部类别</option>'+cats.map(c=>`<option>${c}</option>`).join('');
+  renderRules();renderNodes();renderServers();
+}
+function nodeOptions(sel){return '<option value="">— 选择已有 IP —</option>'+NODES.map(n=>`<option value="${n.id}" ${n.id===sel?'selected':''}>${n.name} · ${n.ip} · ${n.region}</option>`).join('')}
+function regionOptions(sel){return '<option value="">— 地区自动选 —</option>'+REGIONS.map(r=>`<option value="${r.code}" ${r.code===sel?'selected':''}>${r.name}</option>`).join('')}
+function setCat(c){$('cat').value=c;renderRules()}
+function renderRules(){
+  const q=$('q').value.trim().toLowerCase(),cat=$('cat').value,only=$('onlySet').checked;
+  const rows=RULES.filter(r=>{
+    const p=r.platform;
+    if(cat&&p.category!==cat)return false;
+    if(only&&!r.has_rule)return false;
+    if(q&&!(p.name+' '+p.name_zh+' '+p.id).toLowerCase().includes(q))return false;
+    return true;
+  });
+  $('rulesBody').innerHTML=rows.map(r=>{
+    const p=r.platform,ru=r.rule||{};
+    const cur=r.resolved_ip||'<span class="muted">未设置（走上游解析）</span>';
+    return `<tr><td><b>${esc(p.name)}</b> ${p.tier===1?'<span class="badge ok">热门</span>':p.tier===2?'<span class="badge">常用</span>':''}<br><span class="muted">${p.name_zh} · ${p.domains.slice(0,2).join(', ')}</span></td>
+    <td>${p.category}</td>
+    <td><select data-f="mode" data-p="${p.id}"><option value="address" ${(!ru.mode||ru.mode==='address')?'selected':''}>address 直接返回 IP</option><option value="nameserver" ${ru.mode==='nameserver'?'selected':''}>nameserver 转发查询</option></select><br>
+      <select data-f="region" data-p="${p.id}">${regionOptions(ru.region||'')}</select><br>
+      <input data-f="nameserver" data-p="${p.id}" placeholder="上游 DNS IP（nameserver 模式）" value="${ru.nameserver||''}" style="margin-top:4px;width:180px"></td>
+    <td><select data-f="node_id" data-p="${p.id}">${nodeOptions(ru.node_id||'')}</select><br>
+      <input data-f="custom_ip" data-p="${p.id}" placeholder="或直接填 IP，如 203.0.113.10" value="${ru.custom_ip||''}" style="margin-top:4px;width:180px"></td>
+    <td><input data-f="backup_ip" data-p="${p.id}" placeholder="备用 IP（可选）" value="${ru.backup_ip||''}" style="width:130px"><br>
+      <label class="muted"><input type="checkbox" data-f="auto_failover" data-p="${p.id}" ${ru.auto_failover?'checked':''}> 探活失败自动切备用</label></td>
+    <td>${cur}</td>
+    <td><button onclick="saveRule('${p.id}')">保存</button>${r.has_rule?` <button class="ghost" onclick="clearRule('${p.id}')">清除</button>`:''}</td></tr>`;
+  }).join('')||'<tr><td colspan="7" class="muted">没有匹配的平台</td></tr>';
+}
+function ruleForm(pid){
+  const g=f=>{const el=document.querySelector(`[data-f="${f}"][data-p="${pid}"]`);return el?(el.type==='checkbox'?el.checked:el.value.trim()):''};
+  return {platform_id:pid,node_id:g('node_id'),region:g('region'),custom_ip:g('custom_ip'),backup_ip:g('backup_ip'),auto_failover:g('auto_failover'),mode:g('mode'),nameserver:g('nameserver')};
+}
+async function saveRule(pid){
+  const b=ruleForm(pid);
+  if(b.mode==='nameserver'&&!b.nameserver){alert('nameserver 模式需要填上游 DNS IP');return}
+  if(b.mode!=='nameserver'&&!b.node_id&&!b.region&&!b.custom_ip){alert('请先选地区/IP 或直接填一个 IP');return}
+  try{await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)})}
+  catch(e){if(e.conflict&&confirm(e.message+'\n\n点确定强制保存（以本条规则为准）。')){b.force=true;await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)})}else if(!e.conflict){alert(e.message);return}}
+  await refresh();
+}
+async function clearRule(pid){await api('/api/v1/rules',{method:'PUT',body:JSON.stringify({platform_id:pid})});await refresh()}
+const REVEALED={};
+async function toggleReveal(id){
+  if(REVEALED[id]){delete REVEALED[id];renderNodes();return}
+  const j=await api('/api/v1/nodes/'+id+'/reveal');REVEALED[id]=j.ip;renderNodes();
+}
+function renderNodes(){
+  $('nodesBody').innerHTML=NODES.map(n=>`<tr><td>${esc(n.name)}</td><td>${REVEALED[n.id]?esc(REVEALED[n.id]):esc(n.ip)} <button class="ghost" onclick="toggleReveal('${n.id}')">${REVEALED[n.id]?'隐藏':'显示'}</button></td><td>${esc(n.region)}</td>
+  <td>${n.status==='online'?'<span class="badge ok">在线</span>':n.status==='offline'?'<span class="badge bad">离线（仅探活失败，不自动改规则）</span>':'<span class="badge dim">未知</span>'}</td>
+  <td>${n.latency_ms>=0?n.latency_ms+' ms':'—'}</td><td>${esc(n.note||'')}</td>
+  <td><button class="danger" onclick="delNode('${n.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="7" class="muted">还没有解锁 IP：上方添加任意 IP 即可</td></tr>';
+}
+async function addNode(){
+  const name=$('n-name').value.trim(),ip=$('n-ip').value.trim(),region=$('n-region').value,note=$('n-note').value.trim();
+  if(!name||!ip){alert('名称和 IP 必填');return}
+  await api('/api/v1/nodes',{method:'POST',body:JSON.stringify({name,ip,region,note})});
+  $('n-name').value='';$('n-ip').value='';$('n-note').value='';await refresh();
+}
+async function delNode(id){if(!confirm('删除这条 IP 记录？引用它的规则会失效（回落到上游解析）。'))return;await api('/api/v1/nodes/'+id,{method:'DELETE'});await refresh()}
+const SRV_REVEALED={};
+async function toggleSrvToken(id){
+  if(SRV_REVEALED[id]){delete SRV_REVEALED[id];renderServers();return}
+  const j=await api('/api/v1/servers/'+id+'/reveal');SRV_REVEALED[id]=j.token;renderServers();
+}
+function renderServers(){
+  $('serversBody').innerHTML=SERVERS.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.ip||'')}</td><td>${esc(s.default_unlock_ip||'')}</td>
+  <td>${s.status==='online'?'<span class="badge ok">在线</span>':s.status==='offline'?'<span class="badge bad">离线</span>':'<span class="badge dim">未知</span>'}</td>
+  <td>${esc(s.last_seen||'—')}</td><td>v${s.config_version||0}</td><td><code>${esc(s.id)}</code><br>${SRV_REVEALED[s.id]?'<code>'+esc(SRV_REVEALED[s.id])+'</code>':'<span class="muted">token 已隐藏</span>'} <button class="ghost" onclick="toggleSrvToken('${s.id}')">${SRV_REVEALED[s.id]?'隐藏':'显示 token'}</button></td>
+  <td><button class="danger" onclick="delServer('${s.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="8" class="muted">还没有 DNS 服务器：先在 VPS 上执行一键安装命令，或先登记再装机</td></tr>';
+}
+async function addServer(){
+  const name=$('s-name').value.trim(),ip=$('s-ip').value.trim(),def=$('s-defip').value.trim(),allow=$('s-allow').value.trim();
+  if(!name){alert('名称必填');return}
+  const j=await api('/api/v1/servers',{method:'POST',body:JSON.stringify({name,ip,default_unlock_ip:def,allowlist:allow})});
+  $('srvToken').textContent='已登记，agent token（只显示这一次，装机时要用）：'+(j.token||'');
+  $('s-name').value='';$('s-ip').value='';$('s-defip').value='';$('s-allow').value='';await refresh();
+}
+async function delServer(id){if(!confirm('删除这台 DNS 服务器？'))return;await api('/api/v1/servers/'+id,{method:'DELETE'});await refresh()}
+async function loadEvents(){
+  const ev=await api('/api/v1/events');
+  $('eventsBody').innerHTML=ev.map(e=>`<tr><td>${esc(e.time)}</td><td>${esc(e.platform||'')}</td><td>${esc(e.region||'')}</td><td>${esc(e.from_node)}</td><td>${esc(e.to_node)}</td><td>${esc(e.reason)}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">暂无切换记录</td></tr>';
+}
+async function loadChecks(){
+  const list=await api('/api/v1/checks');
+  $('checksBody').innerHTML=list.map(c=>`<tr><td><b>${c.name}</b></td><td>${c.method}</td><td>${c.expect}</td><td><a href="${c.url}" target="_blank" rel="noopener">打开 ↗</a></td></tr>`).join('');
+}
+async function loadDomains(){
+  const all=await api('/api/v1/custom-domains');
+  $('d-platform').innerHTML=PLATFORMS.map(p=>`<option value="${p.id}">${p.name} (${p.name_zh})</option>`).join('');
+  const rows=Object.entries(all).filter(([,v])=>v.length).map(([pid,ds])=>`<p><b>${pid}</b>: ${ds.map(d=>`${d} <a href="#" onclick="delDomain('${pid}','${d}');return false">删除</a>`).join(' · ')}</p>`).join('');
+  $('domainsList').innerHTML=rows||'暂无自定义域名';
+}
+async function addDomain(){
+  const pid=$('d-platform').value,dom=$('d-domain').value.trim();
+  if(!dom){alert('请填写域名');return}
+  await api('/api/v1/custom-domains',{method:'POST',body:JSON.stringify({platform_id:pid,domain:dom})});
+  $('d-domain').value='';await loadDomains();
+}
+async function delDomain(pid,dom){await api('/api/v1/custom-domains?platform_id='+encodeURIComponent(pid)+'&domain='+encodeURIComponent(dom),{method:'DELETE'});await loadDomains()}
+async function loadPublic(){
+  const list=await api('/api/v1/public-sources');
+  $('publicBody').innerHTML=list.map(s=>`<tr><td><b>${s.name}</b></td><td><a href="${s.website}" target="_blank" rel="noopener">${s.website}</a></td><td>${s.free_quota}</td><td>${s.regions}</td><td class="muted">${s.note}</td><td><input id="ps-${s.id}" placeholder="注册后拿到的 DNS IP" value="${s.dns_ip||''}" style="width:130px"> <button onclick="savePublic('${s.id}')">保存</button></td></tr>`).join('');
+}
+async function savePublic(id){
+  await api('/api/v1/public-sources',{method:'PUT',body:JSON.stringify({id,dns_ip:$('ps-'+id).value.trim()})});
+  alert('已保存。规则里选 nameserver 模式并填这个 IP 即可。');
+}
+function copyInstall(){navigator.clipboard.writeText($('installCmd').textContent)}
+function copyUnlock(){navigator.clipboard.writeText($('unlockCmd').textContent)}
+if(TOKEN){init().catch(()=>{$('login').classList.remove('hidden');$('app').classList.add('hidden')})}
+setInterval(()=>{if(!$('app').classList.contains('hidden'))refresh().catch(()=>{})},15000);
+</script>
+</body>
+</html>
