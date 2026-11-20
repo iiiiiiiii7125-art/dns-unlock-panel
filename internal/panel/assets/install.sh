@@ -143,7 +143,7 @@ PYEOF
     local listeners
     listeners=$(ss -tuln 2>/dev/null | grep -E ":$port " | awk '{print $5}' | sort -u)
     [ -z "$listeners" ] && return 0
-    echo "$listeners" | grep -qvE '^(127\.0\.0\.53|127\.0\.0\.54):53$' && return 1
+    echo "$listeners" | grep -qvE '^(127\.0\.0\.53|127\.0\.0\.54)(%[^:]*)?:53$' && return 1
     return 2
   fi
   return 2
@@ -156,7 +156,7 @@ stub_only_conflict() {
   local listeners
   listeners=$(ss -tuln 2>/dev/null | grep -E ':53 ' | awk '{print $5}' | sort -u)
   [ -z "$listeners" ] && return 1
-  echo "$listeners" | grep -qvE '^(127\.0\.0\.53|127\.0\.0\.54):53$' && return 1
+  echo "$listeners" | grep -qvE '^(127\.0\.0\.53|127\.0\.0\.54)(%[^:]*)?:53$' && return 1
   return 0
 }
 
