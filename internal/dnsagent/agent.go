@@ -1166,26 +1166,41 @@ type udpPktinfo struct {
 }
 
 func newUDPPktinfo(c *net.UDPConn, addr *net.UDPAddr) *udpPktinfo {
-	p := &udpPktinfo{v6: addr.IP == nil || addr.IP.To4() == nil}
+	// V016-11: the family comes from the socket, never from the
+	// listen-address string (addr is kept only for the caller's
+	// convenience; it says nothing about the socket Go built). On a
+	// host with IPv6 disabled, ":53" still resolves to a nil-IP
+	// address, but ListenUDP builds an AF_INET socket; judging by the
+	// address would try IPV6_RECVPKTINFO on it, get ENOPROTOOPT and
+	// silently fall back to plain (wrong-source) replies. So try the
+	// IPv6 option first and, only if the socket rejects it, the IPv4
+	// option; only when both fail do we fall back to plain replies,
+	// and that fallback is logged, never silent.
+	p := &udpPktinfo{}
 	raw, err := c.SyscallConn()
 	if err != nil {
 		return p
 	}
 	var setErr error
-	if p.v6 {
-		_ = raw.Control(func(fd uintptr) {
-			setErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, syscall.IPV6_RECVPKTINFO, 1)
-		})
-	} else {
-		_ = raw.Control(func(fd uintptr) {
-			setErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_PKTINFO, 1)
-		})
-	}
-	if setErr != nil {
-		log.Printf("dns-agent: cannot enable pktinfo (%v); replies to 127.0.0.53 may be dropped on source check", setErr)
+	_ = raw.Control(func(fd uintptr) {
+		setErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, syscall.IPV6_RECVPKTINFO, 1)
+	})
+	if setErr == nil {
+		p.v6 = true
+		p.active = true
 		return p
 	}
-	p.active = true
+	v6Err := setErr
+	_ = raw.Control(func(fd uintptr) {
+		setErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_PKTINFO, 1)
+	})
+	if setErr == nil {
+		log.Printf("dns-agent: IPV6_RECVPKTINFO not supported on this socket (%v); using IP_PKTINFO instead", v6Err)
+		p.v6 = false
+		p.active = true
+		return p
+	}
+	log.Printf("dns-agent: cannot enable pktinfo (IPv6: %v; IPv4: %v); replies to 127.0.0.53 may be dropped on source check", v6Err, setErr)
 	return p
 }
 

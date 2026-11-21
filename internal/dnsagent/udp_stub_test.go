@@ -48,6 +48,60 @@ func TestPktinfoOOBRoundTrip(t *testing.T) {
 // start and hold :53. Needs root (privileged port); skip if :53 is busy.
 // The socket stays bound until the test process exits; no other test in
 // this package binds :53.
+// TestPktinfoFamilyFromSocket (V016-11): the pktinfo family must come
+// from the socket itself, not the listen-address string. On a host with
+// IPv6 disabled, ListenUDP(":53") builds an AF_INET socket while the
+// resolved listen address still has a nil IP; judging by the address
+// tries IPV6_RECVPKTINFO on it, gets ENOPROTOOPT and silently falls
+// back to plain (wrong-source) replies. The (AF_INET socket, ":53"
+// address) pair below is exactly what serveUDP passes on such a host.
+func TestPktinfoFamilyFromSocket(t *testing.T) {
+	// Case 1: AF_INET socket + wildcard address -> IPv4 pktinfo, active.
+	c4, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatalf("listen 127.0.0.1: %v", err)
+	}
+	defer c4.Close()
+	wildcard, err := net.ResolveUDPAddr("udp", ":53")
+	if err != nil {
+		t.Fatalf("resolve :53: %v", err)
+	}
+	p4 := newUDPPktinfo(c4, wildcard)
+	if !p4.active {
+		t.Fatalf("AF_INET socket + wildcard addr: pktinfo inactive (V016-11: fell back to plain replies)")
+	}
+	if p4.v6 {
+		t.Fatalf("AF_INET socket + wildcard addr: v6=true, want false")
+	}
+	// Case 2: wildcard socket -> IPv6 (dual-stack) pktinfo, active.
+	c6, err := net.ListenUDP("udp", &net.UDPAddr{})
+	if err != nil {
+		t.Fatalf("listen :0: %v", err)
+	}
+	defer c6.Close()
+	p6 := newUDPPktinfo(c6, wildcard)
+	if !p6.active {
+		t.Fatalf("wildcard socket: pktinfo inactive")
+	}
+	if !p6.v6 {
+		t.Fatalf("wildcard socket: v6=false, want true")
+	}
+	// Case 3: explicit IPv6 socket -> IPv6 pktinfo, active.
+	c6b, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("::1")})
+	if err != nil {
+		t.Skipf("no IPv6 loopback: %v", err)
+	}
+	defer c6b.Close()
+	v6addr, err := net.ResolveUDPAddr("udp", "[::1]:53")
+	if err != nil {
+		t.Fatalf("resolve [::1]:53: %v", err)
+	}
+	p6b := newUDPPktinfo(c6b, v6addr)
+	if !p6b.active || !p6b.v6 {
+		t.Fatalf("IPv6 socket: active=%v v6=%v, want active=true v6=true", p6b.active, p6b.v6)
+	}
+}
+
 func TestServeUDPStarts(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("needs root to bind :53")
