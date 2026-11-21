@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"dnsunlock/internal/model"
@@ -119,5 +120,40 @@ func TestPreferFastestFetchConfig(t *testing.T) {
 	tgt, _ = a.lookup("www.netflix.com")
 	if tgt.ip != "203.0.113.99" {
 		t.Fatalf("lookup during override = %q want 203.0.113.99 (refresh must not steal a failover)", tgt.ip)
+	}
+}
+
+// checkHealth probes PreferFastest candidates too, so every candidate
+// gets a measured latency (otherwise the pick could never compare them).
+func TestCheckHealthProbesCandidates(t *testing.T) {
+	port := localTLSServer(t)
+	oldPort := probePort
+	probePort = strconv.Itoa(port)
+	t.Cleanup(func() { probePort = oldPort })
+
+	a := New(Config{PanelURL: "http://127.0.0.1:8080", Token: "t", ServerID: "srv-1"})
+	rule := model.AgentRule{
+		PlatformID: "netflix", Tier: 1, Domains: []string{"www.netflix.com"},
+		NodeIP: "127.0.0.1", Region: "JP", PreferFastest: true,
+		Candidates: []model.NodeCandidate{
+			{NodeID: "n-live", NodeIP: "127.0.0.1", LatencyMs: 1, Status: "online"},
+			{NodeID: "n-dead", NodeIP: "203.0.113.99", LatencyMs: -1, Status: "unknown"},
+		},
+	}
+	a.rulesMu.Lock()
+	a.rules = map[string]model.AgentRule{"netflix": rule}
+	a.rulesMu.Unlock()
+	a.checkHealth()
+	a.healthMu.Lock()
+	live := a.health["127.0.0.1"]
+	dead := a.health["203.0.113.99"]
+	a.healthMu.Unlock()
+	// 127.0.0.1 is the rule's NodeIP; 203.0.113.99 is ONLY a candidate —
+	// both must end up in the health map.
+	if live == nil || live.status != "online" {
+		t.Fatalf("primary 127.0.0.1 health = %+v want online (TLS on probe port)", live)
+	}
+	if dead == nil || dead.status != "offline" {
+		t.Fatalf("candidate 203.0.113.99 health = %+v want offline (probed, failed)", dead)
 	}
 }

@@ -714,6 +714,17 @@ func (a *Agent) checkHealth() {
 				ips[r.BackupIP] = r.Domains[0]
 			}
 		}
+		// v0.1.6 PreferFastest: probe the candidates too — without
+		// this, a candidate that is nobody's current NodeIP would
+		// never get a measured latency, and neither the agent's
+		// re-pick nor the panel's initial pick could compare it.
+		// Candidates never trigger failover (only a rule's own
+		// NodeIP does, in the loop below).
+		for _, c := range r.Candidates {
+			if _, ok := ips[c.NodeIP]; !ok && len(r.Domains) > 0 {
+				ips[c.NodeIP] = r.Domains[0]
+			}
+		}
 	}
 	a.rulesMu.Unlock()
 	for ip, sni := range ips {
