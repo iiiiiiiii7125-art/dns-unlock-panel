@@ -1,0 +1,19 @@
+worktree: /home/hatch/workspace/dns-unlock-panel-v016r2-shell
+PASS: bash -n install.sh
+PASS: D 源码里已无 grep paste 兜底
+PASS: D 源码里仍有 python3/jq 两路严格解析
+PASS: 提取的函数片段 bash -n 通过
+--- case A rc=0 ---
+  规则域名验证通过: tiktok.com -> 203.0.113.99（规则 IP 一致）
+PASS: A rc=0（python3 路径验证通过）
+PASS: A 取到 tiktok.com → 203.0.113.99
+--- case B rc=0 ---
+  规则域名验证通过: tiktok.com -> 203.0.113.99（规则 IP 一致）
+PASS: B rc=0（jq 路径验证通过）
+PASS: B 取到同一条规则
+--- case C rc=2 ---
+  规则域名验证跳过: 既无 python3 也无 jq，无法解析 agent 配置（请手动验证规则域名）
+PASS: C rc=2（跳过）
+PASS: C 报既无 python3 也无 jq
+PASS: C 未取任何规则（无验证通过/警告行）
+=== R2-09: PASS=11 FAIL=0 ===

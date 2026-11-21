@@ -310,8 +310,11 @@ verify_system_dns() {
 # 解析必须按 rules 数组取第一条 mode=address 且 node_ip 非空的规则
 # （nameserver 规则 mode="nameserver" 且 node_ip 为空；address 规则 mode 为空
 # 或 "address"）。绝不能用贪婪 sed 在整个文件上取最后一次出现（V016-06）：
-# python3 优先（严格解析 JSON），其次 jq，最后用 grep 按字段顺序配对
-# （每条规则恰好一个 domains 数组与一个 node_ip 字段，文档顺序一一对应）。
+# python3 优先（严格解析 JSON），其次 jq；两者都没有时跳过（return 2）。
+# R2-09：原来还有第三路 grep 按字段顺序 paste 配对，已删——它依赖“每条规则
+# 恰好一个 domains 数组与一个 node_ip 字段、文档顺序一一对应”，但
+# model.NodeCandidate 同样有 json:"node_ip"，一个带 N 个候选节点的 region
+# 规则贡献 N+1 个 node_ip，配对会错位；宁可跳过，不猜。
 verify_rule_domain() {
   local cfg domain="" node_ip="" out="" _vrd=""
   cfg="$(mktemp /tmp/dnsunlock-agent-config.XXXXXX)" || { echo "  规则域名验证跳过: 建临时文件失败（稍后手动验证规则域名）"; return 2; }
@@ -339,13 +342,14 @@ PYEOF
     _vrd=$(jq -r '.rules[] | select((.mode // "address") == "address" and (.node_ip // "") != "" and (.domains | length) > 0) | (.domains[0] + "\t" + .node_ip)' "$cfg" 2>/dev/null | head -1)
     if [ -n "$_vrd" ]; then domain="${_vrd%%$'\t'*}"; node_ip="${_vrd#*$'\t'}"; fi
   fi
-  if [ -z "$domain" ]; then
-    _vrd=$(paste <(grep -oE '"domains":\["[^"]*"' "$cfg" 2>/dev/null | sed 's/.*"domains":\["//; s/"$//') <(grep -oE '"node_ip":"[^"]*"' "$cfg" 2>/dev/null | sed 's/.*"node_ip":"//; s/"$//') 2>/dev/null | awk -F'\t' '$2 != "" {print $1 "\t" $2; exit}')
-    if [ -n "$_vrd" ]; then domain="${_vrd%%$'\t'*}"; node_ip="${_vrd#*$'\t'}"; fi
-  fi
   rm -f "$cfg"
   if [ -z "$domain" ] || [ -z "$node_ip" ]; then
-    echo "  规则域名验证跳过: 当前没有 address 模式的规则（未设规则时属正常）"
+    # R2-09：无 python3/jq 时走这里跳过（grep 兜底已删，见函数头注释）。
+    if ! command -v python3 >/dev/null 2>&1 && ! command -v jq >/dev/null 2>&1; then
+      echo "  规则域名验证跳过: 既无 python3 也无 jq，无法解析 agent 配置（请手动验证规则域名）"
+    else
+      echo "  规则域名验证跳过: 当前没有 address 模式的规则（未设规则时属正常）"
+    fi
     return 2
   fi
   if command -v getent >/dev/null 2>&1; then
