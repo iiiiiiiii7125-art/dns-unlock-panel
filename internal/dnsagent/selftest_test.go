@@ -233,6 +233,65 @@ func TestSelftestProbesInParallel(t *testing.T) {
 	t.Logf("4 blackholed rules self-tested in %s", elapsed.Round(time.Millisecond))
 }
 
+// TestSelftestHeartbeatFailureRestores (V016-28): the self-test result
+// is cleared before the heartbeat is sent, so a failed heartbeat loses
+// it forever. On failure the result must be restored for the next
+// heartbeat instead.
+func TestSelftestHeartbeatFailureRestores(t *testing.T) {
+	// A panel endpoint that kills the connection without answering:
+	// panelDo fails on every candidate, deterministically.
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, err := hj.Hijack(); err == nil {
+				conn.Close()
+				return
+			}
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer stub.Close()
+
+	mkResult := func(id string) *model.SelftestResult {
+		return &model.SelftestResult{RequestID: id, RanAt: time.Now().UTC().Format(time.RFC3339),
+			Results: []model.SelftestResultItem{{PlatformID: "netflix", Domain: "www.netflix.com", OK: true}}}
+	}
+	a := New(Config{PanelURL: stub.URL, Token: "t", ServerID: "srv-1"})
+	a.selftestMu.Lock()
+	a.selftestResult = mkResult("st-lost")
+	a.selftestMu.Unlock()
+	a.sendHeartbeat()
+	a.selftestMu.Lock()
+	restored := a.selftestResult
+	a.selftestMu.Unlock()
+	if restored == nil || restored.RequestID != "st-lost" {
+		t.Fatalf("selftest result after failed heartbeat = %+v, want st-lost restored for the next heartbeat", restored)
+	}
+
+	// And the success path still sends once, then clears.
+	var got *model.AgentHeartbeat
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var hb model.AgentHeartbeat
+		_ = json.NewDecoder(r.Body).Decode(&hb)
+		got = &hb
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer good.Close()
+	b := New(Config{PanelURL: good.URL, Token: "t", ServerID: "srv-1"})
+	b.selftestMu.Lock()
+	b.selftestResult = mkResult("st-ok")
+	b.selftestMu.Unlock()
+	b.sendHeartbeat()
+	if got == nil || got.SelftestResult == nil || got.SelftestResult.RequestID != "st-ok" {
+		t.Fatalf("successful heartbeat carried %+v, want st-ok", got)
+	}
+	b.selftestMu.Lock()
+	cleared := b.selftestResult
+	b.selftestMu.Unlock()
+	if cleared != nil {
+		t.Fatalf("selftest result after successful heartbeat = %+v, want nil (sent once)", cleared)
+	}
+}
+
 // A rule whose unlock IP has no TLS listener fails the row (not a crash)
 // and the run still reports the other platforms.
 func TestSelftestProbeFailure(t *testing.T) {

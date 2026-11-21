@@ -882,7 +882,19 @@ func (a *Agent) sendHeartbeat() {
 		return hbReq, nil
 	})
 	if err != nil {
+		// V016-28: the result was already taken out above; a failed
+		// heartbeat must not lose it. Put it back for the next
+		// heartbeat — unless a newer run finished meanwhile (then
+		// selftestResult is already set; the older result is
+		// superseded and stays dropped).
 		fmt.Printf("[agent] heartbeat failed: %v\n", err)
+		if stResult != nil {
+			a.selftestMu.Lock()
+			if a.selftestResult == nil {
+				a.selftestResult = stResult
+			}
+			a.selftestMu.Unlock()
+		}
 		return
 	}
 	resp.Body.Close()
