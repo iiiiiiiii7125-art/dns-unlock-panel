@@ -342,7 +342,7 @@ function rowPasses(r,q,cat,only){
 function rowHTML(r){
   const p=r.platform,ru=r.rule||{};
   const eff=r.resolved_ip||ru.nameserver||'';
-  const cur=r.has_rule?`<span class="badge ok">已设置</span>${eff?'<br>'+esc(eff):''}`:'<span class="badge dim">未设置</span><br><span class="muted">走上游解析</span>';
+  const cur=r.has_rule?`<span class="badge ok">已设置</span>${eff?'<br>'+esc(eff):''}${ru.prefer_fastest?'<br><span class="badge">优先最快</span>':''}`:'<span class="badge dim">未设置</span><br><span class="muted">走上游解析</span>';
   return `<tr id="row-${p.id}"><td><b>${esc(p.name)}</b> ${p.tier===1?'<span class="badge ok">热门</span>':p.tier===2?'<span class="badge">常用</span>':''}<br><span class="muted">${p.name_zh} · ${p.domains.slice(0,2).join(', ')}</span></td>
   <td>${p.category}</td>
   <td><select data-f="mode" data-p="${p.id}"><option value="address" ${(!ru.mode||ru.mode==='address')?'selected':''}>address 直接返回 IP</option><option value="nameserver" ${ru.mode==='nameserver'?'selected':''}>nameserver 转发查询</option></select><br>
@@ -351,7 +351,8 @@ function rowHTML(r){
   <td><select data-f="node_id" data-p="${p.id}">${nodeOptions(ru.node_id||'')}</select><br>
     <input data-f="custom_ip" data-p="${p.id}" placeholder="或直接填 IP，如 203.0.113.10" value="${ru.custom_ip||''}" style="margin-top:4px;width:180px"></td>
   <td><input data-f="backup_ip" data-p="${p.id}" placeholder="备用 IP（可选）" value="${ru.backup_ip||''}" style="width:130px"><br>
-    <label class="muted"><input type="checkbox" data-f="auto_failover" data-p="${p.id}" ${ru.auto_failover?'checked':''}> 探活失败自动切备用</label></td>
+    <label class="muted"><input type="checkbox" data-f="auto_failover" data-p="${p.id}" ${ru.auto_failover?'checked':''}> 探活失败自动切备用</label><br>
+    <label class="muted" title="开启后 agent 按探活延迟自动选同地区最快节点，可能偏离你点的地区；探活延迟测的是 agent→节点路径，不是真实流媒体路径。默认关。"><input type="checkbox" data-f="prefer_fastest" data-p="${p.id}" ${ru.prefer_fastest?'checked':''}> 优先最快节点</label></td>
   <td>${cur}</td>
   <td><button onclick="saveRule('${p.id}')">保存</button>${r.has_rule?` <button class="ghost" onclick="clearRule('${p.id}')">清除</button>`:''}</td></tr>`;
 }
@@ -378,7 +379,7 @@ function renderRules(){
 }
 function ruleForm(pid){
   const g=f=>{const el=document.querySelector(`[data-f="${f}"][data-p="${pid}"]`);return el?(el.type==='checkbox'?el.checked:el.value.trim()):''};
-  return {platform_id:pid,node_id:g('node_id'),region:g('region'),custom_ip:g('custom_ip'),backup_ip:g('backup_ip'),auto_failover:g('auto_failover'),mode:g('mode'),nameserver:g('nameserver')};
+  return {platform_id:pid,node_id:g('node_id'),region:g('region'),custom_ip:g('custom_ip'),backup_ip:g('backup_ip'),auto_failover:g('auto_failover'),prefer_fastest:g('prefer_fastest'),mode:g('mode'),nameserver:g('nameserver')};
 }
 // 只拉规则数据并更新受影响的那一行，不做全页刷新、不跳回顶部。
 async function refreshRulesOnly(){
@@ -434,7 +435,8 @@ function cardStatus(r){
   if(!cardOn(r))return '未开启';
   const ru=effRule(r)||{};
   if(ru.mode==='nameserver')return 'nameserver · '+(ru.nameserver||'');
-  return [ru.region?regionName(ru.region):'',r.resolved_ip||''].filter(Boolean).join(' · ')||'已设置';
+  const s=[ru.region?regionName(ru.region):'',r.resolved_ip||''].filter(Boolean).join(' · ')||'已设置';
+  return s+(ru.prefer_fastest?' · 优先最快':'');
 }
 function hotList(){
   const q=$('q').value.trim().toLowerCase();
@@ -502,7 +504,7 @@ function backendDone(){
     else delete PENDING[pid];
   }else if(BACKEND_SEL){
     const ru=r.rule||{};
-    PENDING[pid]={platform_id:pid,mode:ru.mode||'address',region:BACKEND_SEL,node_id:ru.node_id||'',custom_ip:ru.custom_ip||'',nameserver:ru.nameserver||'',backup_ip:ru.backup_ip||'',auto_failover:!!ru.auto_failover};
+    PENDING[pid]={platform_id:pid,mode:ru.mode||'address',region:BACKEND_SEL,node_id:ru.node_id||'',custom_ip:ru.custom_ip||'',nameserver:ru.nameserver||'',backup_ip:ru.backup_ip||'',auto_failover:!!ru.auto_failover,prefer_fastest:!!ru.prefer_fastest};
     staged=true;
   }else{toast('请先选一个后端，或点“不开启”');return}
   closeBackend();
@@ -539,12 +541,14 @@ function renderEditor(){
     <input id="ed-ns" placeholder="上游 DNS IP（nameserver 模式）" value="${esc(ru.nameserver||'')}" style="width:200px">
     <input id="ed-backup" placeholder="备用 IP（可选）" value="${esc(ru.backup_ip||'')}" style="width:130px">
     <label class="muted"><input type="checkbox" id="ed-failover" ${ru.auto_failover?'checked':''}> 探活失败自动切备用</label>
+    <label class="muted"><input type="checkbox" id="ed-fastest" ${ru.prefer_fastest?'checked':''}> 优先最快节点</label>
   </div>
+  <div class="muted">优先最快节点：开启后 agent 按探活延迟自动选同地区最快节点，可能偏离你点的地区；探活延迟测的是 agent→节点路径，不是真实流媒体路径。默认关。</div>
   <div class="row" style="margin-bottom:0"><button onclick="stageEditor('${p.id}')">暂存修改</button>${(r.has_rule||pd)?` <button class="ghost" onclick="stageClear('${p.id}')">清除</button>`:''}${pd?` <button class="ghost" onclick="unstage('${p.id}')">撤销暂存</button>`:''}</div>`;
 }
 function stageEditor(pid){
   const g=id=>{const el=$(id);return el?(el.type==='checkbox'?el.checked:el.value.trim()):''};
-  const b={platform_id:pid,node_id:g('ed-node'),region:g('ed-region'),custom_ip:g('ed-custom'),backup_ip:g('ed-backup'),auto_failover:g('ed-failover'),mode:g('ed-mode'),nameserver:g('ed-ns')};
+  const b={platform_id:pid,node_id:g('ed-node'),region:g('ed-region'),custom_ip:g('ed-custom'),backup_ip:g('ed-backup'),auto_failover:g('ed-failover'),prefer_fastest:g('ed-fastest'),mode:g('ed-mode'),nameserver:g('ed-ns')};
   if(b.mode==='nameserver'&&!b.nameserver){alert('nameserver 模式需要填上游 DNS IP');return}
   if(b.mode!=='nameserver'&&!b.node_id&&!b.region&&!b.custom_ip){alert('请先选地区/IP 或直接填一个 IP');return}
   PENDING[pid]=b;lastEdJSON='';
@@ -601,7 +605,7 @@ async function clearAllRules(){
 }
 // 导出 = 当前全部已设规则下载为 JSON（纯前端，不需要新接口）；导入读回同一格式。
 function exportRules(){
-  const rules=RULES.filter(r=>r.has_rule).map(r=>{const ru=r.rule||{};return {platform_id:r.platform.id,mode:ru.mode||'address',region:ru.region||'',node_id:ru.node_id||'',custom_ip:ru.custom_ip||'',nameserver:ru.nameserver||'',backup_ip:ru.backup_ip||'',auto_failover:!!ru.auto_failover}});
+  const rules=RULES.filter(r=>r.has_rule).map(r=>{const ru=r.rule||{};return {platform_id:r.platform.id,mode:ru.mode||'address',region:ru.region||'',node_id:ru.node_id||'',custom_ip:ru.custom_ip||'',nameserver:ru.nameserver||'',backup_ip:ru.backup_ip||'',auto_failover:!!ru.auto_failover,prefer_fastest:!!ru.prefer_fastest}});
   const data={app:'dnsunlock',version:1,exported_at:new Date().toISOString(),rules};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a');
@@ -624,7 +628,7 @@ async function onImportFile(ev){
     const pid=it&&it.platform_id;
     const p=PLATFORMS.find(x=>x.id===pid);
     if(!p){fail.push(String(pid)+'：平台不存在');continue}
-    const b={platform_id:pid,mode:it.mode||'address',region:it.region||'',node_id:it.node_id||'',custom_ip:it.custom_ip||'',nameserver:it.nameserver||'',backup_ip:it.backup_ip||'',auto_failover:!!it.auto_failover};
+    const b={platform_id:pid,mode:it.mode||'address',region:it.region||'',node_id:it.node_id||'',custom_ip:it.custom_ip||'',nameserver:it.nameserver||'',backup_ip:it.backup_ip||'',auto_failover:!!it.auto_failover,prefer_fastest:!!it.prefer_fastest};
     if(b.mode==='nameserver'&&!b.nameserver){fail.push(pid+'：nameserver 模式缺上游 DNS');continue}
     if(b.mode!=='nameserver'&&!b.node_id&&!b.region&&!b.custom_ip){fail.push(pid+'：缺地区/IP');continue}
     try{await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)});ok.push(pid)}
