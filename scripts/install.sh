@@ -1846,11 +1846,18 @@ PYEOF
   echo "unknown"
 }
 
-# _enabled_boot_warn：agent 保持停止、且还原前是开机自启时提醒下次启动会抢 :53（V016-24）。
-# AGENT_WAS_ENABLED 只写不读的死变量问题就此解决。
-_enabled_boot_warn() {
+# _enabled_boot_disable：agent 保持停止、且还原前是开机自启时直接 disable（V016-24）。
+# 只警告不够：还原可被非交互调用（uninstall 以 --yes 调还原），那时没人读
+# 输出；留下的 enabled 状态会在下次开机抢 :53，与还原本意矛盾。disable
+# 只关开机自启，不阻止手动 systemctl start，重跑安装脚本会恢复自启。
+# 仅当 AGENT_WAS_ENABLED=1 时做；无 unit 时该变量恒为 0，不动。
+_enabled_boot_disable() {
   if [ "$AGENT_WAS_ENABLED" = 1 ]; then
-    echo "注意: agent 仍是开机自启（enabled），下次启动时还会尝试绑定 :53、与 systemd-resolved 抢端口；如不再用 agent 分流，请执行 systemctl disable dnsunlock-agent，或重跑安装脚本重新接管。"
+    if systemctl disable "$AGENT_UNIT" 2>/dev/null; then
+      echo "agent 还原前是开机自启（enabled），已直接改为不开机自启（systemctl disable dnsunlock-agent），下次启动不会再抢 :53；手动 systemctl start dnsunlock-agent 仍可用，重跑安装脚本会重新接管并恢复自启。"
+    else
+      echo "警告: agent 还原前是开机自启（enabled），但 systemctl disable dnsunlock-agent 失败，下次启动仍可能抢 :53；请手动执行 systemctl disable dnsunlock-agent，或重跑安装脚本。" >&2
+    fi
   fi
 }
 
@@ -1878,7 +1885,7 @@ restore_agent_after() {
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：实测 systemd-resolved 的 stub 已在 $_rest 监听，agent 的通配符 :53 无法同时绑定。"
           echo "如需继续用 agent 分流，请重新执行安装脚本（它会重新关掉 stub 并接管）；只想恢复系统 DNS 的话，现在已经好了。"
           clear_pending_marker
-          _enabled_boot_warn
+          _enabled_boot_disable
           ;;
         free)
           # V016-08 修的是“谎报”，不是“自动恢复”：实测 :53 空闲只说明
@@ -1890,19 +1897,19 @@ restore_agent_after() {
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：实测 :53 当前空闲（systemd-resolved 的 stub 并未在监听），按还原设计不自动恢复 agent，避免分流静默残留。"
           echo "注意：resolved 的 stub 没起来，系统 DNS 可能不可用；还原后的验证会如实报告（验证失败则还原退出码为 1）。如需继续用 agent 分流，请重跑安装脚本；只想恢复系统 DNS 的话，请先检查 systemd-resolved 是否正常启动。"
           clear_pending_marker
-          _enabled_boot_warn
+          _enabled_boot_disable
           ;;
         held)
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：systemd-resolved 的 stub 未在 :53 上监听，但 :53 仍被占（${_rest:-别的服务}），agent 的通配符 :53 无法绑定。"
           echo "如需继续用 agent 分流，请先处理占 :53 的服务后重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
           clear_pending_marker
-          _enabled_boot_warn
+          _enabled_boot_disable
           ;;
         *)
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：无法确认 :53 的占用情况（本机无 ss/python3 可测），为避免抢端口失败，agent 未恢复。"
           echo "如需继续用 agent 分流，请重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
           clear_pending_marker
-          _enabled_boot_warn
+          _enabled_boot_disable
           ;;
       esac
       ;;
@@ -1915,12 +1922,12 @@ restore_agent_after() {
         echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：该地址就是 systemd-resolved 的 stub 地址，agent 占了它会直接抢掉 stub。"
         echo "如需继续用 agent 分流，请重跑安装脚本并改监听地址（例如 bash install.sh --dns-listen 127.0.0.1:53）；只想恢复系统 DNS 的话，现在已经好了。"
         clear_pending_marker
-        _enabled_boot_warn
+        _enabled_boot_disable
       elif _blockers=$(listen_blocked "$AGENT_LISTEN"); then
         echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：该监听地址已被占（$_blockers），agent 绑不上。"
         echo "如需继续用 agent 分流，请先处理占用的服务后重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
         clear_pending_marker
-        _enabled_boot_warn
+        _enabled_boot_disable
       else
         echo "agent 还原前在运行（监听 $AGENT_LISTEN），正在恢复..."
         if restart_agent; then
