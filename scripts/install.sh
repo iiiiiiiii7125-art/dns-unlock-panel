@@ -214,6 +214,73 @@ ask_yes_no() {
   case "$ans" in y|Y) return 0;; *) return 1;; esac
 }
 
+# v0.1.6 item 2：接管后用系统解析器验证（不是只 @agent 查）。
+# 优先 getent hosts（走 glibc，遵守 resolv.conf 的 options use-vc），
+# 缺 getent 回退不带 @server 的 dig（use-vc 时加 +tcp）。
+# 返回 0=解析成功，1=解析失败，2=没工具（只警告，不 abort）。
+# 注意：缺 dig 只在这里可降级；测速环节缺 dig 仍是致命的（两处不要混淆）。
+verify_system_dns() {
+  local domain="$1" out=""
+  if command -v getent >/dev/null 2>&1; then
+    if out=$(getent hosts "$domain" 2>/dev/null) && [ -n "$out" ]; then
+      echo "  系统解析验证通过: $domain -> $(echo "$out" | awk '{print $1}' | head -1)（getent，走系统解析器）"
+      return 0
+    fi
+    echo "  系统解析验证失败: getent hosts $domain 无结果" >&2
+    return 1
+  fi
+  if command -v dig >/dev/null 2>&1; then
+    if [ "${USE_VC:-0}" = "1" ]; then
+      out=$(dig +tcp +short "$domain" A 2>/dev/null | grep -E '^[0-9]+\.' | head -1)
+    else
+      out=$(dig +short "$domain" A 2>/dev/null | grep -E '^[0-9]+\.' | head -1)
+    fi
+    if [ -n "$out" ]; then
+      echo "  系统解析验证通过: $domain -> $out（dig，不带 @server）"
+      return 0
+    fi
+    echo "  系统解析验证失败: dig $domain 无结果" >&2
+    return 1
+  fi
+  echo "  系统解析验证跳过: 既无 getent 也无 dig，无法验证（请手动验证：getent hosts $domain）" >&2
+  return 2
+}
+
+# v0.1.6 item 2：再查一条已设规则的域名，确认返回规则 IP。
+# 规则取自面板 /api/v1/agent/config 的第一条 address 模式规则（domains[0] + node_ip）；
+# 无规则、取不到、或规则是 nameserver 模式（答案不改写）时跳过，只提示手动核对。
+# 失败只警告，不致命（规则 IP 也可能因故障切换而变化）。
+verify_rule_domain() {
+  local cfg="/tmp/dnsunlock-agent-config.json" domain="" node_ip="" out=""
+  curl -fsSL -K "$AUTH_CFG" --max-time 8 "$PANEL_BASE/api/v1/agent/config" -o "$cfg" 2>/dev/null || { echo "  规则域名验证跳过: 拉不到 agent 配置（稍后手动验证规则域名）"; return 2; }
+  domain=$(sed -n 's/.*"domains":\["\([^"]*\)".*/\1/p' "$cfg" | head -1)
+  node_ip=$(sed -n 's/.*"node_ip":"\([^"]*\)".*/\1/p' "$cfg" | head -1)
+  rm -f "$cfg"
+  if [ -z "$domain" ] || [ -z "$node_ip" ]; then
+    echo "  规则域名验证跳过: 当前没有 address 模式的规则（未设规则时属正常）"
+    return 2
+  fi
+  if command -v getent >/dev/null 2>&1; then
+    out=$(getent hosts "$domain" 2>/dev/null | awk '{print $1}' | head -1)
+  elif command -v dig >/dev/null 2>&1; then
+    if [ "${USE_VC:-0}" = "1" ]; then out=$(dig +tcp +short "$domain" A 2>/dev/null | grep -E '^[0-9]+\.' | head -1);
+    else out=$(dig +short "$domain" A 2>/dev/null | grep -E '^[0-9]+\.' | head -1); fi
+  else
+    echo "  规则域名验证跳过: 既无 getent 也无 dig（请手动验证：getent hosts $domain，应返回规则 IP $node_ip）"
+    return 2
+  fi
+  if [ "$out" = "$node_ip" ]; then
+    echo "  规则域名验证通过: $domain -> $out（规则 IP 一致）"
+    return 0
+  fi
+  if [ -n "$out" ]; then
+    echo "  警告: 规则域名 $domain 解析到 $out，不是规则 IP $node_ip（可能是 nameserver 模式规则、故障切换、或规则未生效，请人工核对）" >&2
+  else
+    echo "  警告: 规则域名 $domain 系统解析无结果（规则 IP 应为 $node_ip，请人工核对）" >&2
+  fi
+  return 1
+}
+
 # v0.1.3 容错：面板 443 被挡时不要硬等 134 秒。候选顺序：
 # (a) 配置的 PANEL_URL 本身，(b) 同一主机 http :8080（面板本身一直监听
 # :8080，443 只是 Caddy 的反代），(c) 同一主机解析出的 IP :8080。
@@ -465,10 +532,12 @@ if command -v dig >/dev/null 2>&1; then
   if dig +short "@$_dl_host" -p "$_dl_port" example.com A | grep -qE '^[0-9]+\.'; then echo "  验证通过: example.com 能走上游解析"; else echo "  验证失败: example.com 解析无结果，请看 journalctl -u dnsunlock-agent"; exit 1; fi
   echo "  提示: 再测一条已设规则的域名，如 dig @$_dl_host -p $_dl_port netflix.com A，应返回规则里配的解锁 IP（未设规则时走上游属正常）。"
 else
-  # P1-11：没装 dig 就无法验证解析。不要跳过验证还谎称“安装完成”：
-  # 直接停下，让用户装好 dnsutils/bind-utils 再验证（或手动测）。
-  echo "  验证失败: 未装 dig，无法验证解析。请安装 dnsutils（Debian/Ubuntu）或 bind-utils（RHEL/CentOS）后手动验证：dig @$_dl_host -p $_dl_port example.com A"
-  exit 1
+  # v0.1.6 item 2：缺 dig 不再 exit 1——区分“测不了”和“测了不通”。
+  # 测不了只警告 + 继续安装（接管步必须能跑到）；dig 在但解析无结果仍是硬失败（见上）。
+  # 注意：测速环节缺 dig 仍是致命的（见 pick_fastest_ip / run_speed_test 的约定），只在应用后验证环节可降级。
+  echo "  警告: 未装 dig，无法自动验证解析，继续安装（agent 本身不受影响）。"
+  echo "  请手动验证：dig @$_dl_host -p $_dl_port example.com A（装 dig：Debian/Ubuntu 用 apt-get install -y dnsutils，RHEL/CentOS 用 yum install -y bind-utils）"
+  echo "  也可不用 dig：getent hosts example.com（走系统解析器；接管后才有效）"
 fi
 
 # 6. 可选: 把本机系统 DNS 设为 127.0.0.1（默认不做，需确认）。
@@ -557,7 +626,20 @@ PYEOF
   [ -L /etc/resolv.conf ] && rm -f /etc/resolv.conf
   printf 'nameserver 127.0.0.1\noptions use-vc\n' > /etc/resolv.conf
   chattr +i /etc/resolv.conf 2>/dev/null || echo "注意: chattr +i 失败（文件系统不支持），resolv.conf 可能被覆盖，请留意。"
-  echo "本机 DNS 已设为 127.0.0.1（options use-vc：UDP 不通自动走 TCP），还原命令: dnsunlock-restore-dns"
+  # v0.1.6 item 2：接管后立刻用系统解析器验证（getent 优先），不谎称成功。
+  # rc=1 时大声警告 + 给还原命令；rc=2（没工具）只警告，不 abort。
+  TAKEOVER_VERIFY=0
+  verify_system_dns example.com || TAKEOVER_VERIFY=$?
+  if [ "$TAKEOVER_VERIFY" = 0 ]; then verify_rule_domain || true; fi
+  if [ "$TAKEOVER_VERIFY" = 1 ]; then
+    echo "!!!! 警告：接管后系统解析验证未通过——本机解析现在可能不走 agent，流量可能不走分流 !!!!"
+    echo "!!!! 请检查 journalctl -u dnsunlock-agent，并用 getent hosts example.com / dig example.com A 复查；要回滚请运行：dnsunlock-restore-dns !!!!"
+    echo "本机 DNS 已写入 127.0.0.1，但验证未通过（见上），还原命令: dnsunlock-restore-dns"
+  elif [ "$TAKEOVER_VERIFY" = 2 ]; then
+    echo "本机 DNS 已设为 127.0.0.1，但系统解析验证因缺工具未做（见上），请手动验证：getent hosts example.com；还原命令: dnsunlock-restore-dns"
+  else
+    echo "本机 DNS 已设为 127.0.0.1（options use-vc：UDP 不通自动走 TCP），还原命令: dnsunlock-restore-dns"
+  fi
 fi
 fi # 非 Tailscale resolv.conf 的机器才问是否接管；Tailscale 的机器直接跳过
 # 一键还原脚本（无论是否接管都装上）
