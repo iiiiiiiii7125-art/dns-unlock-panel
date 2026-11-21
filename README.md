@@ -13,12 +13,10 @@
 
 面板就是**单 Go 二进制 + 本地数据文件**，任意一台 VPS 都能跑，不强制 Docker、不强制 Cloudflare。
 
+安装时会问你要不要填域名：填了配 Caddy 自动反代 + HTTPS，留空只跑 8080。80/443 被占时脚本会停下，不覆盖别人的服务。
+
 ```bash
-# 一键安装（在任意 VPS 上，root）。跑起来后会问你域名：
-#   域名（填了就配 Caddy 自动反代 + HTTPS；留空只跑 :8080，不配反代）:
-# 填域名自动配 Caddy 反代 + HTTPS，留空只跑 8080；80/443 被占时脚本会停下，不覆盖别人的服务。
 curl -fsSL https://raw.githubusercontent.com/iiiiiiiii7125-art/dns-unlock-panel/main/scripts/install-panel.sh | bash
-# 不想等询问，也可以直接传参：bash install-panel.sh --domain dns.example.com
 ```
 
 打开面板，用默认账号 **admin / admin** 登录，**首次登录后请立即改密码**（改完后旧密码立即失效、所有登录失效）。
