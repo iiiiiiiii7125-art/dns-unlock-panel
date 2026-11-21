@@ -489,6 +489,14 @@ PYEOF
   echo "unknown"
 }
 
+# _enabled_boot_warn：agent 保持停止、且还原前是开机自启时提醒下次启动会抢 :53（V016-24）。
+# AGENT_WAS_ENABLED 只写不读的死变量问题就此解决。
+_enabled_boot_warn() {
+  if [ "$AGENT_WAS_ENABLED" = 1 ]; then
+    echo "注意: agent 仍是开机自启（enabled），下次启动时还会尝试绑定 :53、与 systemd-resolved 抢端口；如不再用 agent 分流，请执行 systemctl disable dnsunlock-agent，或重跑安装脚本重新接管。"
+  fi
+}
+
 # 还原后按需恢复 agent（实测为准，不瞎猜，V016-08）。
 # agent 监听通配符 :53 时：先实测 :53 的占用——resolved 的 stub 真在
 # 127.0.0.53:53 上监听才说“已重新占用”并保持停止；:53 空闲就把 agent
@@ -513,6 +521,7 @@ restore_agent_after() {
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：实测 systemd-resolved 的 stub 已在 $_rest 监听，agent 的通配符 :53 无法同时绑定。"
           echo "如需继续用 agent 分流，请重新执行安装脚本（它会重新关掉 stub 并接管）；只想恢复系统 DNS 的话，现在已经好了。"
           clear_pending_marker
+          _enabled_boot_warn
           ;;
         free)
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），但实测 :53 当前空闲（systemd-resolved 的 stub 并未在监听），正在把 agent 恢复运行..."
@@ -527,11 +536,13 @@ restore_agent_after() {
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：systemd-resolved 的 stub 未在 :53 上监听，但 :53 仍被占（${_rest:-别的服务}），agent 的通配符 :53 无法绑定。"
           echo "如需继续用 agent 分流，请先处理占 :53 的服务后重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
           clear_pending_marker
+          _enabled_boot_warn
           ;;
         *)
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：无法确认 :53 的占用情况（本机无 ss/python3 可测），为避免抢端口失败，agent 未恢复。"
           echo "如需继续用 agent 分流，请重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
           clear_pending_marker
+          _enabled_boot_warn
           ;;
       esac
       ;;
@@ -544,10 +555,12 @@ restore_agent_after() {
         echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：该地址就是 systemd-resolved 的 stub 地址，agent 占了它会直接抢掉 stub。"
         echo "如需继续用 agent 分流，请重跑安装脚本并改监听地址（例如 bash install.sh --dns-listen 127.0.0.1:53）；只想恢复系统 DNS 的话，现在已经好了。"
         clear_pending_marker
+        _enabled_boot_warn
       elif _blockers=$(listen_blocked "$AGENT_LISTEN"); then
         echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：该监听地址已被占（$_blockers），agent 绑不上。"
         echo "如需继续用 agent 分流，请先处理占用的服务后重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
         clear_pending_marker
+        _enabled_boot_warn
       else
         echo "agent 还原前在运行（监听 $AGENT_LISTEN），正在恢复..."
         if restart_agent; then
