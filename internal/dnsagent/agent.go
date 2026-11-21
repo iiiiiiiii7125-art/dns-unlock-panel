@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"dnsunlock/internal/model"
@@ -825,7 +827,7 @@ func (a *Agent) sendHeartbeat() {
 	a.selftestMu.Unlock()
 	hb := model.AgentHeartbeat{
 		ServerID: a.cfg.ServerID, Nodes: nodes, Events: events,
-		Counters: model.AgentCounters{Total: a.total.Load(), Rewritten: a.rewritten.Load(), Forwarded: a.forwarded.Load(), PerPlatform: perPlat},
+		Counters:       model.AgentCounters{Total: a.total.Load(), Rewritten: a.rewritten.Load(), Forwarded: a.forwarded.Load(), PerPlatform: perPlat},
 		SelftestResult: stResult,
 	}
 	b, _ := json.Marshal(hb)
@@ -1104,16 +1106,29 @@ func (a *Agent) serveUDP() error {
 		return err
 	}
 	defer c.Close()
+	// P1 (v0.1.6): reply from the address the query was sent to.
+	// A wildcard :53 socket also receives queries sent to 127.0.0.53
+	// (the systemd-resolved stub address), but the kernel answers them
+	// from 127.0.0.1, which dig/getent discard on source check
+	// (bare-UDP capture: reply from ('127.0.0.1', 53), ID and content
+	// correct, still dropped). TCP is unaffected (the reply source of
+	// an accepted connection is the address it was made to).
+	// IP_PKTINFO / IPV6_PKTINFO makes each reply carry the query's
+	// destination address as its source. Best effort: if the socket
+	// does not support it, fall back to plain replies (old behavior).
+	pkt := newUDPPktinfo(c, addr)
 	buf := make([]byte, 8192)
+	oob := make([]byte, 64)
 	for {
-		n, remote, err := c.ReadFromUDP(buf)
+		n, oobn, _, remote, err := c.ReadMsgUDP(buf, oob)
 		if err != nil {
 			return err
 		}
 		if !a.allowed(remote.IP) {
 			continue // not on the allowlist: drop silently, no reply
 		}
-		pkt := append([]byte(nil), buf[:n]...)
+		pktBytes := append([]byte(nil), buf[:n]...)
+		dst := pkt.dstFromOOB(oob[:oobn])
 		select {
 		case a.sem <- struct{}{}:
 		default:
@@ -1121,12 +1136,110 @@ func (a *Agent) serveUDP() error {
 		}
 		go func() {
 			defer func() { <-a.sem }()
-			resp := a.handlePacket(pkt)
-			if resp != nil {
-				_, _ = c.WriteToUDP(resp, remote)
+			resp := a.handlePacket(pktBytes)
+			if resp == nil {
+				return
 			}
+			if dst != nil {
+				if _, _, err := c.WriteMsgUDP(resp, pkt.replyOOB(dst), remote); err != nil {
+					// A wrong-source reply is better than silence if
+					// the kernel rejects the ancillary data.
+					_, _ = c.WriteToUDP(resp, remote)
+				}
+				return
+			}
+			_, _ = c.WriteToUDP(resp, remote)
 		}()
 	}
+}
+
+// udpPktinfo makes UDP replies carry the query's destination address as
+// their source (IP_PKTINFO for IPv4 sockets, IPV6_PKTINFO for IPv6 /
+// dual-stack sockets). Without it, a wildcard :53 socket answers queries
+// sent to 127.0.0.53 from 127.0.0.1, and dig/getent discard the reply.
+// Ancillary data is built with encoding/binary (no unsafe); the layout
+// is the kernel's struct cmsghdr + struct in_pktinfo / in6_pktinfo on
+// little-endian amd64/arm64 (the only release targets).
+type udpPktinfo struct {
+	v6     bool // socket is IPv6 (incl. the dual-stack wildcard ":53")
+	active bool // recv-pktinfo was enabled on the socket
+}
+
+func newUDPPktinfo(c *net.UDPConn, addr *net.UDPAddr) *udpPktinfo {
+	p := &udpPktinfo{v6: addr.IP == nil || addr.IP.To4() == nil}
+	raw, err := c.SyscallConn()
+	if err != nil {
+		return p
+	}
+	var setErr error
+	if p.v6 {
+		_ = raw.Control(func(fd uintptr) {
+			setErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, syscall.IPV6_RECVPKTINFO, 1)
+		})
+	} else {
+		_ = raw.Control(func(fd uintptr) {
+			setErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_PKTINFO, 1)
+		})
+	}
+	if setErr != nil {
+		log.Printf("dns-agent: cannot enable pktinfo (%v); replies to 127.0.0.53 may be dropped on source check", setErr)
+		return p
+	}
+	p.active = true
+	return p
+}
+
+// dstFromOOB extracts the packet's destination address from ancillary data.
+func (p *udpPktinfo) dstFromOOB(oob []byte) net.IP {
+	if !p.active || len(oob) == 0 {
+		return nil
+	}
+	cmsgs, err := syscall.ParseSocketControlMessage(oob)
+	if err != nil {
+		return nil
+	}
+	for _, m := range cmsgs {
+		if p.v6 {
+			if m.Header.Level == syscall.IPPROTO_IPV6 && m.Header.Type == syscall.IPV6_PKTINFO && len(m.Data) >= 16 {
+				return net.IP(append([]byte(nil), m.Data[:16]...))
+			}
+		} else if m.Header.Level == syscall.IPPROTO_IP && m.Header.Type == syscall.IP_PKTINFO && len(m.Data) >= 12 {
+			return net.IP(append([]byte(nil), m.Data[8:12]...))
+		}
+	}
+	return nil
+}
+
+// replyOOB builds the ancillary data that forces the reply source to dst.
+func (p *udpPktinfo) replyOOB(dst net.IP) []byte {
+	if !p.active || dst == nil {
+		return nil
+	}
+	if p.v6 {
+		ip16 := dst.To16()
+		if ip16 == nil {
+			return nil
+		}
+		oob := make([]byte, syscall.CmsgSpace(20))
+		binary.LittleEndian.PutUint64(oob[0:8], uint64(syscall.CmsgLen(20)))
+		binary.LittleEndian.PutUint32(oob[8:12], uint32(syscall.IPPROTO_IPV6))
+		binary.LittleEndian.PutUint32(oob[12:16], uint32(syscall.IPV6_PKTINFO))
+		copy(oob[16:32], ip16)                       // ipi6_addr
+		binary.LittleEndian.PutUint32(oob[32:36], 0) // ipi6_ifindex
+		return oob[:syscall.CmsgLen(20)]
+	}
+	ip4 := dst.To4()
+	if ip4 == nil {
+		return nil
+	}
+	oob := make([]byte, syscall.CmsgSpace(12))
+	binary.LittleEndian.PutUint64(oob[0:8], uint64(syscall.CmsgLen(12)))
+	binary.LittleEndian.PutUint32(oob[8:12], uint32(syscall.IPPROTO_IP))
+	binary.LittleEndian.PutUint32(oob[12:16], uint32(syscall.IP_PKTINFO))
+	binary.LittleEndian.PutUint32(oob[16:20], 0) // ipi_ifindex
+	copy(oob[20:24], ip4)                        // ipi_spec_dst
+	copy(oob[24:28], ip4)                        // ipi_addr
+	return oob[:syscall.CmsgLen(12)]
 }
 
 func (a *Agent) serveTCP() error {
