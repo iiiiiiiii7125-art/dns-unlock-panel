@@ -1,0 +1,9 @@
+enable dnsunlock-agent
+restart systemd-resolved
+reload NetworkManager
+stop dnsunlock-agent
+enable systemd-resolved
+restart systemd-resolved
+disable dnsunlock-agent
+enable systemd-resolved
+restart systemd-resolved

@@ -1,0 +1,46 @@
+监听地址 :53 可绑定。
+=== dnsunlock 安装 ===
+面板: http://127.0.0.1:18180
+  探测 http://127.0.0.1:8080 -> 不通（HTTP 000）
+  面板入口测速排名（并行探测，8 秒超时，最快在前）：
+    http://127.0.0.1:18180 -> HTTP 401，1 ms
+[0/6] 装前检查：面板连通性 + token...
+server_id: srv-1795304958694753840（token 验证通过）
+[1/6] 下载 dnsunlock-linux-amd64 ...
+dnsunlock-linux-amd64: OK
+sha256 校验通过
+[2/6] 写配置...
+[3/6] 启动服务（不自动放行防火墙 53，请按 allowlist 自行放行）...
+[4/6] 装后验证...
+  验证通过: example.com 能走上游解析（TCP；本机 UDP 解析不通，已自动走 TCP）
+  提示: 再测一条已设规则的域名，如 dig @127.0.0.1 -p 53 netflix.com A，应返回规则里配的解锁 IP（未设规则时走上游属正常）。
+--- 基线（接管前）：dnsunlock check --via upstream ---
+  chatgpt	openai.com	-	FAIL	no usable unlock IP for region US
+  claude	claude.ai	-	FAIL	no usable unlock IP for region US
+  disneyplus	disneyplus.com	-	FAIL	no usable unlock IP for region HK
+  gemini	gemini.google.com	-	FAIL	no usable unlock IP for region US
+  hbomax	hbomax.com	-	FAIL	no usable unlock IP for region US
+  hulu	hulu.com	-	FAIL	no usable unlock IP for region US
+  instagram	instagram.com	-	FAIL	no usable unlock IP for region US
+  netflix	netflix.com	-	FAIL	no usable unlock IP for region HK
+  primevideo	primevideo.com	-	FAIL	no usable unlock IP for region US
+  spotify	spotify.com	-	FAIL	no usable unlock IP for region US
+  tiktok	tiktok.com	198.18.246.195	OK	416
+  youtube-premium	youtube.com	-	FAIL	no usable unlock IP for region HK
+  bbciplayer	bbci.co.uk	-	FAIL	no usable unlock IP for region GB
+  crunchyroll	crunchyroll.com	-	FAIL	no usable unlock IP for region US
+  dazn	dazn.com	198.18.246.196	OK	214
+  youtube	youtu.be	-	FAIL	no usable unlock IP for region HK
+  警告: 基线（接管前）：有规则未通过（exit 1，见上表 FAIL 行），不致命，继续安装。
+
+!!!! 注意：检测到 hpve-init 管理本机 DNS 的痕迹（/etc/resolv.conf 或系统里有 hpve-init 相关文件/服务）!!!!
+hpve-init 可能会在之后把 resolv.conf 改回去，导致接管失效；是否继续接管请自行判断。
+检测到 hpve-init 痕迹，是否仍要继续接管？ [y/N] 已取消接管（hpve-init 痕迹）：agent 本身已装好并在运行，只是不改本机系统 DNS。
+（未接管：接管前基线见上，无复测对比；要复测可跑 /usr/local/bin/dnsunlock check --config /etc/dnsunlock/config.json --via agent）
+
+=== 安装完成 ===
+面板: http://127.0.0.1:18180  (分流规则改动后约 5 秒生效)
+DNS 监听: :53
+测试: dig @127.0.0.1 -p 53 netflix.com A    # 应返回规则里配的解锁 IP
+      dig @127.0.0.1 -p 53 example.com A    # 应返回真实上游 IP
+日志: journalctl -u dnsunlock-agent -f     # 注意: 无查询日志, 只有计数与探活
