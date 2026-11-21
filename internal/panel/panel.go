@@ -314,6 +314,24 @@ func resolveIP(nodes []model.Node, r model.Rule) (string, string, bool) {
 		return r.CustomIP, "", true
 	}
 	if r.Region != "" {
+		// PreferFastest: lowest-latency ONLINE node in the region wins
+		// the initial pick (LatencyMs comes from the agent's 30s probes,
+		// stored on the node by heartbeat). No online node with a
+		// measured latency -> fall through to the normal first-online
+		// pick below, never to a node already known dead.
+		if r.PreferFastest {
+			best := -1
+			for i, n := range nodes {
+				if n.Region == r.Region && n.Enabled && n.Status == "online" && n.LatencyMs >= 0 {
+					if best < 0 || n.LatencyMs < nodes[best].LatencyMs {
+						best = i
+					}
+				}
+			}
+			if best >= 0 {
+				return nodes[best].IP, nodes[best].ID, true
+			}
+		}
 		var fallback *model.Node
 		for i, n := range nodes {
 			if n.Region == r.Region && n.Enabled {
@@ -330,6 +348,23 @@ func resolveIP(nodes []model.Node, r model.Rule) (string, string, bool) {
 		}
 	}
 	return "", "", false
+}
+
+// regionCandidates lists the enabled nodes in a region rule's region so
+// the agent can re-pick the fastest healthy one from its own probe data.
+// Only for region-only rules (explicit NodeID/CustomIP already pin one IP,
+// nameserver rules have no node IP at all). Empty = no choice to make.
+func regionCandidates(nodes []model.Node, r model.Rule) []model.NodeCandidate {
+	if r.Region == "" || r.NodeID != "" || r.CustomIP != "" || r.Mode == "nameserver" {
+		return nil
+	}
+	var out []model.NodeCandidate
+	for _, n := range nodes {
+		if n.Region == r.Region && n.Enabled {
+			out = append(out, model.NodeCandidate{NodeID: n.ID, NodeIP: n.IP, LatencyMs: n.LatencyMs, Status: n.Status})
+		}
+	}
+	return out
 }
 
 func (s *Server) Handler() http.Handler {
@@ -840,12 +875,13 @@ func (s *Server) domainConflict(snap store.Data, plat model.Platform, body struc
 	CustomIP     string `json:"custom_ip"`
 	BackupIP     string `json:"backup_ip"`
 	AutoFailover bool   `json:"auto_failover"`
+	PreferFastest bool  `json:"prefer_fastest"`
 	Mode         string `json:"mode"`
 	Nameserver   string `json:"nameserver"`
 	ServerID     string `json:"server_id"`
 	Force        bool   `json:"force"`
 }) string {
-	newRule := model.Rule{PlatformID: body.PlatformID, NodeID: body.NodeID, Region: body.Region, CustomIP: body.CustomIP, Mode: body.Mode, Nameserver: body.Nameserver}
+	newRule := model.Rule{PlatformID: body.PlatformID, NodeID: body.NodeID, Region: body.Region, CustomIP: body.CustomIP, PreferFastest: body.PreferFastest, Mode: body.Mode, Nameserver: body.Nameserver}
 	newIP, _, newOK := resolveIP(snap.Nodes, newRule)
 	if body.Mode == "nameserver" {
 		newIP = "nameserver:" + body.Nameserver
@@ -945,6 +981,7 @@ func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
 			CustomIP     string `json:"custom_ip"`
 			BackupIP     string `json:"backup_ip"`
 			AutoFailover bool   `json:"auto_failover"`
+			PreferFastest bool  `json:"prefer_fastest"`
 			Mode         string `json:"mode"`
 			Nameserver   string `json:"nameserver"`
 			ServerID     string `json:"server_id"`
@@ -1013,7 +1050,7 @@ func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "cleared": true})
 			return
 		}
-		rule := model.Rule{PlatformID: body.PlatformID, NodeID: body.NodeID, Region: body.Region, CustomIP: body.CustomIP, BackupIP: body.BackupIP, AutoFailover: body.AutoFailover, Mode: body.Mode, Nameserver: body.Nameserver}
+		rule := model.Rule{PlatformID: body.PlatformID, NodeID: body.NodeID, Region: body.Region, CustomIP: body.CustomIP, BackupIP: body.BackupIP, AutoFailover: body.AutoFailover, PreferFastest: body.PreferFastest, Mode: body.Mode, Nameserver: body.Nameserver}
 		sid := body.ServerID
 		if sid == "" {
 			sid = serverID
@@ -1104,6 +1141,43 @@ func (s *Server) handleServerByID(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "server not found"})
+		return
+	}
+	// POST /api/v1/servers/{id}/selftest — queue one connectivity
+	// self-test for that server. Returns 201 {request_id}; an already
+	// queued (unconsumed, <10min old) request returns 409 with the old
+	// request_id instead of queueing a duplicate; unknown server 404.
+	// A request older than 10 minutes is presumed orphaned (agent dead
+	// or never polled) and may be replaced by a fresh POST.
+	if r.Method == http.MethodPost && strings.HasSuffix(id, "/selftest") {
+		sid := strings.TrimSuffix(id, "/selftest")
+		snap := s.store.Snapshot()
+		found := false
+		for _, sv := range snap.Servers {
+			if sv.ID == sid {
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": "server not found"})
+			return
+		}
+		if old, ok := snap.SelftestPending[sid]; ok {
+			if t, err := time.Parse(time.RFC3339, old.RequestedAt); err == nil && time.Since(t) < 10*time.Minute {
+				writeJSON(w, http.StatusConflict, map[string]any{"error": "已有待处理的自测请求，请等 agent 下次轮询执行完再试", "request_id": old.ID})
+				return
+			}
+		}
+		req := model.SelftestRequest{ID: store.NewID("st"), RequestedAt: time.Now().UTC().Format(time.RFC3339)}
+		_ = s.store.Update(func(d *store.Data) (bool, error) {
+			if d.SelftestPending == nil {
+				d.SelftestPending = map[string]model.SelftestRequest{}
+			}
+			d.SelftestPending[sid] = req
+			return false, nil // queueing a test must not bump config version
+		})
+		writeJSON(w, http.StatusCreated, map[string]any{"request_id": req.ID, "server_id": sid, "requested_at": req.RequestedAt})
 		return
 	}
 	if r.Method != http.MethodDelete {
@@ -1307,6 +1381,11 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		merged[k] = v
 	}
 	cfg := model.AgentConfig{Version: snap.ConfigVersion, Upstream: snap.Upstream}
+	// v0.1.6 self-test: deliver a queued request once, then consume it
+	// so the agent runs it exactly once (it also dedupes by ID).
+	if req, ok := snap.SelftestPending[serverID]; ok {
+		cfg.SelftestRequest = &req
+	}
 	var defaultIP string
 	for _, sv := range snap.Servers {
 		if sv.ID == serverID {
@@ -1372,9 +1451,10 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 			PlatformID: p.ID, Domains: kept,
 			NodeID: nid, NodeIP: ip, Region: rule.Region, Tier: p.Tier,
 			BackupIP: rule.BackupIP, AutoFailover: rule.AutoFailover,
+			PreferFastest: rule.PreferFastest, Candidates: regionCandidates(snap.Nodes, rule),
 		})
 	}
-	// Mark server seen.
+	// Mark server seen, and consume a delivered self-test request.
 	if serverID != "" {
 		now := time.Now().UTC().Format(time.RFC3339)
 		_ = s.store.Update(func(d *store.Data) (bool, error) {
@@ -1388,6 +1468,12 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 			}
 			return false, nil
 		})
+		if _, ok := snap.SelftestPending[serverID]; ok {
+			_ = s.store.Update(func(d *store.Data) (bool, error) {
+				delete(d.SelftestPending, serverID)
+				return false, nil
+			})
+		}
 	}
 	writeJSON(w, http.StatusOK, cfg)
 }
@@ -1423,6 +1509,10 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 			if sv.ID == hb.ServerID {
 				d.Servers[i].LastSeen = now
 				d.Servers[i].Status = "online"
+				// v0.1.6 self-test: keep the newest result per server.
+				if hb.SelftestResult != nil {
+					d.Servers[i].LastSelftest = hb.SelftestResult
+				}
 			}
 		}
 		for _, e := range hb.Events {

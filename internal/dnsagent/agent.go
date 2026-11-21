@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -99,6 +100,14 @@ type Agent struct {
 	overrideMu    sync.Mutex
 	eventsMu      sync.Mutex
 	pendingEvents []model.FailoverEvent
+	// self-test (v0.1.6): one queued request at a time, run in the
+	// background so a slow probe never stalls the 5s config poll.
+	// The result rides the next heartbeat, then is cleared (sent once).
+	selftestMu     sync.Mutex
+	selftestRun    map[string]bool // request id -> currently running
+	selftestDone   map[string]bool // request id -> already ran (dedupe)
+	selftestResult *model.SelftestResult
+	selftestRuns   int // runs started (test hook)
 	// panel fallback (v0.1.3): candidate panel endpoints, built once
 	// from the configured panel URL; last-known-good is tried first.
 	// In-memory only — nothing new is persisted to disk.
@@ -146,6 +155,7 @@ func New(cfg Config) *Agent {
 		upstream: cfg.Upstream, upstreams: []string{cfg.Upstream, "8.8.8.8"}, perPlat: map[string]int64{},
 		health: map[string]*nodeHealth{}, rules: map[string]model.AgentRule{},
 		override: map[string]string{}, allowIPs: map[string]bool{},
+		selftestRun: map[string]bool{}, selftestDone: map[string]bool{},
 		panelCandidates: panelCandidates(cfg.PanelURL),
 		cache:           map[string]cacheEntry{}, lastFetch: time.Now(), lastFetchOK: true,
 		sem: make(chan struct{}, 256),
@@ -176,7 +186,9 @@ func New(cfg Config) *Agent {
 	// resolver into an open one.
 	a.allowlistErr = ValidateAllowlist(cfg.Allowlist)
 	if len(a.allowNets) == 0 && len(a.allowIPs) == 0 {
-		fmt.Println("[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.")
+		// Stderr, not stdout: stdout is machine-readable output for
+		// `dnsunlock check` (and nothing here is a query answer).
+		fmt.Fprintln(os.Stderr, "[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.")
 	}
 	return a
 }
@@ -314,7 +326,8 @@ func (a *Agent) panelDo(newReq func(base string) (*http.Request, error)) (*http.
 	return nil, lastErr
 }
 
-func (a *Agent) fetchConfig() error {
+func (a *Agent) fetchAgentConfig() (model.AgentConfig, error) {
+	var cfg model.AgentConfig
 	// Token goes in the header, never in the URL (URLs land in access
 	// logs). The panel's agentAuth accepts X-Agent-Token (P0-06).
 	resp, err := a.panelDo(func(base string) (*http.Request, error) {
@@ -328,15 +341,22 @@ func (a *Agent) fetchConfig() error {
 		return req, nil
 	})
 	if err != nil {
-		return err
+		return cfg, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("panel config: %s: %s", resp.Status, strings.TrimSpace(string(b)))
+		return cfg, fmt.Errorf("panel config: %s: %s", resp.Status, strings.TrimSpace(string(b)))
 	}
-	var cfg model.AgentConfig
 	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func (a *Agent) fetchConfig() error {
+	cfg, err := a.fetchAgentConfig()
+	if err != nil {
 		return err
 	}
 	a.lastFetchMu.Lock()
@@ -354,19 +374,24 @@ func (a *Agent) fetchConfig() error {
 			}
 			return sorted[i].PlatformID < sorted[j].PlatformID
 		})
-		domains := map[string]target{}
 		rules := map[string]model.AgentRule{}
 		for _, r := range sorted {
-			rules[r.PlatformID] = r
-			for _, d := range r.Domains {
-				d = strings.ToLower(strings.TrimSuffix(d, "."))
-				if _, exists := domains[d]; exists {
-					continue
+			// PreferFastest: initial pick only. The panel already
+			// resolved NodeIP to its fastest stored node; the agent
+			// re-picks here from its own live probe data, and again
+			// after every 30s health cycle (refreshFastest). This
+			// never touches AutoFailover: a failover override still
+			// wins in lookup(), and failback still returns to this
+			// (effective) primary when it recovers.
+			if r.PreferFastest && len(r.Candidates) > 0 {
+				if fast, ok := a.pickFastest(r); ok && fast != r.NodeIP {
+					fmt.Printf("[agent] prefer-fastest: %s %s -> %s (lowest probe latency in %s)\n", r.PlatformID, r.NodeIP, fast, r.Region)
+					r.NodeIP = fast
 				}
-				domains[d] = target{ip: r.NodeIP, platform: r.PlatformID, mode: r.Mode, ns: r.Nameserver}
 			}
+			rules[r.PlatformID] = r
 		}
-		a.domains = domains
+		a.rebuildDomainsLocked(rules)
 		a.rulesMu.Lock()
 		oldRules := a.rules
 		a.rules = rules
@@ -396,7 +421,210 @@ func (a *Agent) fetchConfig() error {
 		}
 	}
 	a.mu.Unlock()
+	// v0.1.6 self-test: a queued request runs in the background so a
+	// slow probe never stalls the 5s poll loop.
+	a.maybeStartSelftest(cfg.SelftestRequest)
 	return nil
+}
+
+// maybeStartSelftest starts one run for a queued request, unless this
+// request already ran or is running (the panel may deliver it twice).
+func (a *Agent) maybeStartSelftest(req *model.SelftestRequest) {
+	if req == nil || req.ID == "" {
+		return
+	}
+	a.selftestMu.Lock()
+	if a.selftestDone[req.ID] || a.selftestRun[req.ID] {
+		a.selftestMu.Unlock()
+		return
+	}
+	a.selftestRun[req.ID] = true
+	a.selftestRuns++
+	a.selftestMu.Unlock()
+	go a.runSelftest(*req)
+}
+
+// runSelftest tests every rule's first platform domain: resolve it with
+// the agent's own lookup (nameserver rules: ask that nameserver), then
+// TCP :443 + TLS handshake the resolved IP (probeIP). One row per
+// platform, so the UI can list "domain -> resolved IP -> ok?" verbatim.
+// Connectivity only — it does NOT prove the service accepts the traffic.
+func (a *Agent) runSelftest(req model.SelftestRequest) {
+	defer func() {
+		a.selftestMu.Lock()
+		delete(a.selftestRun, req.ID)
+		a.selftestDone[req.ID] = true
+		a.selftestMu.Unlock()
+	}()
+	a.rulesMu.Lock()
+	rules := make([]model.AgentRule, 0, len(a.rules))
+	for _, r := range a.rules {
+		rules = append(rules, r)
+	}
+	a.rulesMu.Unlock()
+	sort.Slice(rules, func(i, j int) bool { return rules[i].PlatformID < rules[j].PlatformID })
+	res := &model.SelftestResult{
+		RequestID: req.ID, RanAt: time.Now().UTC().Format(time.RFC3339),
+		Results: []model.SelftestResultItem{},
+	}
+	for _, r := range rules {
+		if len(r.Domains) == 0 {
+			continue
+		}
+		domain := r.Domains[0]
+		item := model.SelftestResultItem{PlatformID: r.PlatformID, Domain: domain, LatencyMs: -1}
+		ip, err := a.resolveForSelftest(r, domain)
+		if err != nil {
+			item.Error = err.Error()
+			res.Results = append(res.Results, item)
+			continue
+		}
+		item.ResolvedIP = ip
+		lat, ok := a.probeIP(ip, domain)
+		item.LatencyMs = lat
+		item.OK = ok
+		if !ok {
+			item.Error = "TCP :" + probePort + " 连接或 TLS 握手失败"
+		}
+		res.Results = append(res.Results, item)
+	}
+	a.selftestMu.Lock()
+	a.selftestResult = res
+	a.selftestMu.Unlock()
+	fmt.Printf("[agent] selftest %s done: %d platforms\n", req.ID, len(res.Results))
+}
+
+// resolveForSelftest resolves one domain the way the agent itself would
+// answer it: address rules via lookup (failover override included),
+// nameserver rules by asking that nameserver directly.
+func (a *Agent) resolveForSelftest(r model.AgentRule, domain string) (string, error) {
+	if r.Mode == "nameserver" {
+		if r.Nameserver == "" {
+			return "", fmt.Errorf("nameserver 模式未填上游 DNS IP")
+		}
+		ns := r.Nameserver
+		resolver := &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				d := &net.Dialer{Timeout: 3 * time.Second}
+				return d.DialContext(ctx, "udp", net.JoinHostPort(ns, "53"))
+			},
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ips, err := resolver.LookupHost(ctx, domain)
+		if err != nil {
+			return "", fmt.Errorf("向上游 %s 查询失败: %v", ns, err)
+		}
+		if len(ips) == 0 {
+			return "", fmt.Errorf("上游 %s 未返回 IP", ns)
+		}
+		return ips[0], nil
+	}
+	t, ok := a.lookup(domain)
+	if !ok {
+		return "", fmt.Errorf("agent 未匹配到该域名的规则")
+	}
+	if net.ParseIP(t.ip) == nil {
+		return "", fmt.Errorf("解锁 IP 无效: %q", t.ip)
+	}
+	return t.ip, nil
+}
+
+// rebuildDomainsLocked rebuilds the domain->target map from rules.
+// Caller must hold a.mu (write). Tier order decides shared domains
+// (P1-02): lowest tier wins, first platform wins a shared domain.
+func (a *Agent) rebuildDomainsLocked(rules map[string]model.AgentRule) {
+	sorted := make([]model.AgentRule, 0, len(rules))
+	for _, r := range rules {
+		sorted = append(sorted, r)
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Tier != sorted[j].Tier {
+			return sorted[i].Tier < sorted[j].Tier
+		}
+		return sorted[i].PlatformID < sorted[j].PlatformID
+	})
+	domains := map[string]target{}
+	for _, r := range sorted {
+		for _, d := range r.Domains {
+			d = strings.ToLower(strings.TrimSuffix(d, "."))
+			if _, exists := domains[d]; exists {
+				continue
+			}
+			domains[d] = target{ip: r.NodeIP, platform: r.PlatformID, mode: r.Mode, ns: r.Nameserver}
+		}
+	}
+	a.domains = domains
+}
+
+// pickFastest returns the lowest-latency healthy candidate IP for a
+// PreferFastest rule, using the agent's own probe data (health map) when
+// any candidate has been probed, else the panel's stored LatencyMs.
+// It returns ok=false when no candidate is usable: no probed candidate
+// is online, or no latency is known at all — the caller then keeps the
+// panel-resolved NodeIP instead of picking a node known to be dead.
+func (a *Agent) pickFastest(r model.AgentRule) (string, bool) {
+	a.healthMu.Lock()
+	defer a.healthMu.Unlock()
+	probed := false
+	bestIP := ""
+	var bestLat int64
+	for _, c := range r.Candidates {
+		if h, ok := a.health[c.NodeIP]; ok {
+			probed = true
+			if h.status == "online" && h.latency >= 0 && (bestIP == "" || h.latency < bestLat) {
+				bestIP, bestLat = c.NodeIP, h.latency
+			}
+		}
+	}
+	if probed {
+		return bestIP, bestIP != ""
+	}
+	for _, c := range r.Candidates {
+		// Panel-side fallback: a node the panel already knows is
+		// offline must not win on a stale low latency either.
+		if c.Status == "offline" {
+			continue
+		}
+		if c.LatencyMs >= 0 && (bestIP == "" || c.LatencyMs < bestLat) {
+			bestIP, bestLat = c.NodeIP, c.LatencyMs
+		}
+	}
+	return bestIP, bestIP != ""
+}
+
+// refreshFastest re-picks the fastest healthy node for PreferFastest
+// rules after each 30s health cycle, from fresh probe data. It is an
+// INITIAL-choice refresh only: a platform with an active failover
+// override is skipped, so AutoFailover keeps owning the switch until
+// the primary recovers (failback), and this never overrides it.
+func (a *Agent) refreshFastest() {
+	a.overrideMu.Lock()
+	overridden := map[string]bool{}
+	for pid := range a.override {
+		overridden[pid] = true
+	}
+	a.overrideMu.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.rulesMu.Lock()
+	defer a.rulesMu.Unlock()
+	changed := false
+	for pid, r := range a.rules {
+		if !r.PreferFastest || len(r.Candidates) == 0 || overridden[pid] {
+			continue
+		}
+		if fast, ok := a.pickFastest(r); ok && fast != r.NodeIP {
+			fmt.Printf("[agent] prefer-fastest: %s %s -> %s (probe latency changed)\n", pid, r.NodeIP, fast)
+			r.NodeIP = fast
+			a.rules[pid] = r
+			changed = true
+		}
+	}
+	if changed {
+		a.rebuildDomainsLocked(a.rules)
+	}
 }
 
 func (a *Agent) pollLoop(stop <-chan struct{}) {
@@ -426,7 +654,10 @@ func (a *Agent) pollLoop(stop <-chan struct{}) {
 // healthLoop probes each distinct unlock IP on TCP :443 every 30s.
 // A failed probe only updates status (reported to the panel, shown red).
 // Automatic rule changes happen ONLY via failoverToBackup, and only for
-// rules where the user explicitly enabled AutoFailover with a BackupIP.
+// rules where the user explicitly enabled AutoFailover with a BackupIP —
+// except PreferFastest, which only re-picks the INITIAL node choice from
+// fresh probe data and never overrides an active failover (see
+// refreshFastest).
 func (a *Agent) healthLoop(stop <-chan struct{}) {
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
@@ -441,6 +672,10 @@ func (a *Agent) healthLoop(stop <-chan struct{}) {
 	}
 }
 
+// probePort is the TCP port probeIP / the self-test dials. Production
+// value is 443; tests override it to a local TLS listener's port.
+var probePort = "443"
+
 func (a *Agent) probeIP(ip, sni string) (int64, bool) {
 	// P2-07: TCP :443 open does not prove unlocking works. Dial, then do
 	// a TLS handshake (no verification — the IP is the unlock node, not
@@ -448,7 +683,7 @@ func (a *Agent) probeIP(ip, sni string) (int64, bool) {
 	// counts as a failed probe.
 	start := time.Now()
 	d := &net.Dialer{Timeout: 3 * time.Second}
-	c, err := d.Dial("tcp", net.JoinHostPort(ip, "443"))
+	c, err := d.Dial("tcp", net.JoinHostPort(ip, probePort))
 	if err != nil {
 		return -1, false
 	}
@@ -477,6 +712,17 @@ func (a *Agent) checkHealth() {
 		if r.BackupIP != "" {
 			if _, ok := ips[r.BackupIP]; !ok && len(r.Domains) > 0 {
 				ips[r.BackupIP] = r.Domains[0]
+			}
+		}
+		// v0.1.6 PreferFastest: probe the candidates too — without
+		// this, a candidate that is nobody's current NodeIP would
+		// never get a measured latency, and neither the agent's
+		// re-pick nor the panel's initial pick could compare it.
+		// Candidates never trigger failover (only a rule's own
+		// NodeIP does, in the loop below).
+		for _, c := range r.Candidates {
+			if _, ok := ips[c.NodeIP]; !ok && len(r.Domains) > 0 {
+				ips[c.NodeIP] = r.Domains[0]
 			}
 		}
 	}
@@ -529,6 +775,9 @@ func (a *Agent) checkHealth() {
 			a.overrideMu.Unlock()
 		}
 	}
+	// PreferFastest re-pick from the fresh probe data (initial choice
+	// only — platforms under a failover override are skipped inside).
+	a.refreshFastest()
 }
 
 // failoverToBackup switches ONE opted-in rule to its backup IP.
@@ -569,9 +818,15 @@ func (a *Agent) sendHeartbeat() {
 		perPlat[k] = v
 	}
 	a.perPlatMu.Unlock()
+	// v0.1.6 self-test: attach a finished result once, then clear it.
+	a.selftestMu.Lock()
+	stResult := a.selftestResult
+	a.selftestResult = nil
+	a.selftestMu.Unlock()
 	hb := model.AgentHeartbeat{
 		ServerID: a.cfg.ServerID, Nodes: nodes, Events: events,
 		Counters: model.AgentCounters{Total: a.total.Load(), Rewritten: a.rewritten.Load(), Forwarded: a.forwarded.Load(), PerPlatform: perPlat},
+		SelftestResult: stResult,
 	}
 	b, _ := json.Marshal(hb)
 	resp, err := a.panelDo(func(base string) (*http.Request, error) {

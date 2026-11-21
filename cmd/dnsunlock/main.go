@@ -47,6 +47,8 @@ func main() {
 		runAgent(os.Args[2:])
 	case "sni-proxy":
 		runProxy(os.Args[2:])
+	case "check":
+		runCheck(os.Args[2:])
 	case "version", "-v", "--version":
 		fmt.Println("dnsunlock v1.0.0 (MVP)")
 	default:
@@ -62,6 +64,7 @@ func usage() {
   dnsunlock panel      启动控制面板 (默认 :8080)
   dnsunlock dns-agent  启动 DNS 分流服务 (默认 :53)
   dnsunlock sni-proxy  启动 SNI 代理 (默认 :443, 可选)
+  dnsunlock check      自测基线: 查每条规则域名并探活 (见下, 供 installer 调用)
 
 环境变量:
   PANEL_ADDR   面板监听地址 (默认 :8080)
@@ -75,6 +78,14 @@ func usage() {
   DNS_AGENT_TOKEN 每台服务器的 agent token (面板登记时生成, 只放 600 配置文件里; 不要写进命令行, 会进 shell 历史)
   DNS_CONFIG   agent 配置文件 (默认 /etc/dnsunlock/config.json, 含 token 与 allowlist, 0600)
   SNI_LISTEN   SNI 代理监听地址 (默认 :443)
+
+check 模式 (v0.1.6, 供 installer 做接管前后基线对比):
+  dnsunlock check --config /etc/dnsunlock/config.json [--via agent|upstream]
+  每条已设规则的平台一行:
+    <platform_id>\t<domain>\t<resolved_ip>\tOK|FAIL\t<ms|error>
+  无规则打印 NO_RULES (exit 0); 全部 OK exit 0; 任一 FAIL exit 1;
+  配置/用法错误 exit 2。--via agent 默认走本机 agent (:53 或配置的
+  dns_listen); agent 没在跑时每条记 FAIL、exit 1, 不崩溃。
   SNI_CONFIG   SNI 配置文件 (0600, 含 allowlist; 与 dns-agent 一致, 不走命令行)
   HTTP_LISTEN  明文 HTTP 代理监听地址 (默认空 = 禁用; 启用时同样受 allowlist 管)
 
@@ -213,6 +224,67 @@ func runAgent(args []string) {
 	})
 	log.Printf("dns-agent listening on %s  panel=%s  server=%s", *listen, *panelURL, *serverID)
 	log.Fatal(a.Run())
+}
+
+// runCheck implements `dnsunlock check` (v0.1.6, installer baseline).
+// Exit codes are the contract: 0 all OK / NO_RULES, 1 any FAIL,
+// 2 config/usage error. Nothing but the result rows (or NO_RULES)
+// goes to stdout — diagnostics go to stderr.
+func runCheck(args []string) {
+	fs := flag.NewFlagSet("check", flag.ExitOnError)
+	cfgFile := fs.String("config", env("DNS_CONFIG", ""), "agent config file (0600, contains the agent token; required)")
+	via := fs.String("via", "agent", "how to resolve: agent (this machine's agent DNS) or upstream (panel's upstream directly)")
+	_ = fs.Parse(args)
+	if *via != "agent" && *via != "upstream" {
+		fmt.Fprintf(os.Stderr, "check: --via must be agent or upstream, got %q\n", *via)
+		os.Exit(2)
+	}
+	if *cfgFile == "" {
+		fmt.Fprintln(os.Stderr, "check: --config is required (e.g. --config /etc/dnsunlock/config.json)")
+		os.Exit(2)
+	}
+	b, err := os.ReadFile(*cfgFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "check: read config %s: %v\n", *cfgFile, err)
+		os.Exit(2)
+	}
+	var fc agentFileConfig
+	if err := jsonUnmarshal(b, &fc); err != nil {
+		fmt.Fprintf(os.Stderr, "check: parse config %s: %v\n", *cfgFile, err)
+		os.Exit(2)
+	}
+	token := fc.AgentToken
+	if token == "" {
+		token = fc.Token
+	}
+	if token == "" || fc.ServerID == "" {
+		fmt.Fprintln(os.Stderr, "check: config must contain agent_token (or token) and server_id")
+		os.Exit(2)
+	}
+	panelURL := fc.PanelURL
+	if panelURL == "" {
+		panelURL = env("PANEL_URL", "http://127.0.0.1:8080")
+	}
+	listen := fc.DNSListen
+	if listen == "" {
+		listen = env("DNS_LISTEN", ":53")
+	}
+	a := dnsagent.New(dnsagent.Config{
+		Listen: listen, PanelURL: panelURL, Token: token, ServerID: fc.ServerID,
+	})
+	results, code, err := a.RunCheck(*via)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "check: %v\n", err)
+		os.Exit(2)
+	}
+	if len(results) == 0 {
+		fmt.Println("NO_RULES")
+		os.Exit(0)
+	}
+	for _, r := range results {
+		fmt.Println(r.Line())
+	}
+	os.Exit(code)
 }
 
 // sniFileConfig mirrors agentFileConfig: the SNI proxy reads its
