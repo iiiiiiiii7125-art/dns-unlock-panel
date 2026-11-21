@@ -60,6 +60,7 @@ getent_rule_not() { ! getent hosts "$RULE_DOMAIN" 2>/dev/null | grep -q "$RULE_I
 getent_example_ok() { getent hosts example.com 2>/dev/null | grep -qE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; }
 
 port53_free() { /root/rig/bin/bindprobe "" 53; }
+port53_busy() { ! port53_free; }  # V016-13：S14 前置断言用（:53 被 agent 占住）
 
 stop_agent() {
   if [ -f "$STATE/agent.pid" ]; then
@@ -343,6 +344,14 @@ run_restore "$LOG/s13-restore2.log" --yes
 assert "S13 默认还原回原文件" files_eq /etc/resolv.conf "$RIG/fixtures/resolv.conf.base"
 
 echo "=== S14 函数级：validate_ipv4 / valid_panel_url / probe / UUID / verify ==="
+# V016-13：S14 自给自足——不再假设 S13 残留的 agent 还在跑。
+# P1(a) 之后 S13 的还原会停掉 agent（通配符分支保持停止），S14 若不自己起
+# agent，getent 走 127.0.0.1:53 必然失败。开头显式起 agent，结尾停掉。
+write_agent_config ":53"
+nohup /root/rig/bin/dnsunlock dns-agent --config /etc/dnsunlock/config.json >> "$LOG/agent.log" 2>&1 &
+echo $! > "$STATE/agent.pid"
+assert "S14 前置：agent 已起并返回规则 IP" wait_for_rule
+assert "S14 前置：agent 正在 :53 监听" port53_busy
 awk '/^(validate_ipv4|valid_panel_url|probe_agent_transport|get_active_nm_connection_uuid|get_primary_interface|verify_system_dns|verify_rule_domain)\(\) [{]$/,/^[}]$/' "$INSTALL" > /tmp/rig-funcs.sh
 assert "S14 函数提取成功" bash -c "[ -s /tmp/rig-funcs.sh ]"
 bash -n /tmp/rig-funcs.sh && pass "S14 提取的函数 bash -n 通过" || fail "S14 提取的函数 bash -n 通过"
@@ -405,6 +414,9 @@ cp "$RIG/fixtures/resolv.conf.base" /etc/resolv.conf
 assert "S14 verify_rule_domain 非规则 IP → rc 1" expect_fail verify_rule_domain
 cp /tmp/rig-resolv-saved /etc/resolv.conf
 rm -f "$AUTH_CFG"
+# V016-13：S14 自己起的 agent 自己停掉，不把运行状态留给后续场景。
+stop_agent
+assert "S14 结尾：agent 已停" port53_free
 
 echo "=== S15 无永久备份：提示临时清理办法 ==="
 mv /etc/dnsunlock/resolv.conf.orig /tmp/rig-orig-saved
