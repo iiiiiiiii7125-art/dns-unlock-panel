@@ -1,0 +1,35 @@
+== R2-06 copyServerInstall ==
+  PASS 06i reveal fails: nothing copied
+  PASS 06i reveal fails: alert says fetch failed, not copied
+  PASS 06ii empty token: nothing copied
+  PASS 06ii empty token: alert says no token, not copied
+  PASS 06iii reveal ok: command copied with token
+  PASS 06iii reveal ok: alert says copied
+== R2-11 node install header has no masked IP ==
+  PASS 11 header has no masked IP
+  PASS 11 header still names the node
+  PASS 11 header still carries the region
+  PASS 11 header still says which machine to run on
+  PASS 11 row commands still differ per node
+  PASS 11 row B command names JP-01
+  PASS 11 allowlist IP (from server reveal) is unaffected
+  PASS 11 renderNodes passes node id per row
+== R2-16 empty-IP servers are named, not silently skipped ==
+  PASS 16i partial empty: command copied with surviving IP
+  PASS 16i partial empty: alert names the empty-IP server
+  PASS 16ii all empty: command copied without allowlist
+  PASS 16ii all empty: alert names both empty-IP servers
+  PASS 16ii all empty: alert still explains allowlist is missing
+== V016-21 regression (updated for R2-11: header has name+region, no IP) ==
+  PASS 21i all reveal fail: nothing copied
+  PASS 21i all reveal fail: alert says fetch failed
+  PASS 21i all reveal fail: alert does NOT claim "未登记"
+  PASS 21ii partial fail: command copied with surviving IP
+  PASS 21ii partial fail: alert names the failed server
+  PASS 21iii row commands differ
+  PASS 21iii row A command names HK-01 + HK, no node IP
+  PASS 21iii row B command names JP-01 + JP, no node IP
+  PASS 21iii each command says which machine to run on
+  PASS 21iv newline in node name stays inside comment
+
+29 passed, 0 failed

@@ -769,9 +769,15 @@ function serverInstallCmd(s,token,defip){
 }
 let LAST_SRV_CMD='';
 function copySrvInstall(){if(LAST_SRV_CMD)navigator.clipboard.writeText(LAST_SRV_CMD)}
+// R2-06：reveal 失败不再静默 reject——与 copyNodeInstall（V016-21）对齐：
+// 失败时如实报错、不复制；token 为空同样不复制（否则会拷出
+// DNS_AGENT_TOKEN=undefined 的坏命令）。
 async function copyServerInstall(id){
   const s=SERVERS.find(x=>x.id===id);if(!s)return;
-  const j=await api('/api/v1/servers/'+id+'/reveal');
+  let j;
+  try{j=await api('/api/v1/servers/'+id+'/reveal')}
+  catch(e){alert('取 token 失败，命令未复制：'+(e.message||e)+'。请稍后重试，或重新登录后再试。');return}
+  if(!j||!j.token){alert('服务器未返回 token，命令未复制。请稍后重试，或重新登录后再试。');return}
   navigator.clipboard.writeText(serverInstallCmd(s,j.token,j.default_unlock_ip));
   alert('安装命令已复制，到目标 VPS 粘贴执行即可。');
 }
@@ -786,16 +792,21 @@ async function copyServerInstall(id){
 // 命令本身带了节点身份；节点名里的换行先去掉，防注释断行注入新命令）。
 // reveal 失败不再静默跳过：全失败时不复制、如实报取 IP 失败；部分失败时
 // 复制已有 IP 的命令，但提示里点名哪台没取到（allowlist 可能不全）。
+// R2-16：reveal 成功但 IP 为空的同样点名（“未返回 IP，已跳过”），不静默。
 async function copyNodeInstall(nodeId){
   const node=NODES.find(x=>x.id===nodeId);
   if(!SERVERS.length){alert('还没有登记 DNS 服务器：先去「DNS 服务器」页登记一台（拿到 agent token 后再装节点）。节点安装命令装机时要先校验 agent token，没有服务器就没有可用 token，现在复制了也跑不通。');return}
-  const ips=[],failed=[];
+  const ips=[],failed=[],emptyIp=[];
   for(const s of SERVERS){
-    try{const j=await api('/api/v1/servers/'+s.id+'/reveal');if(j.ip&&!ips.includes(j.ip))ips.push(j.ip)}
+    // R2-16：reveal 成功但 IP 为空不再静默跳过——点名记进 emptyIp，下面提示里报出。
+    try{const j=await api('/api/v1/servers/'+s.id+'/reveal');if(j.ip){if(!ips.includes(j.ip))ips.push(j.ip)}else{emptyIp.push(s.name)}}
     catch(e){failed.push(s.name+'（取 IP 失败：'+(e.message||e)+'）')}
   }
   if(!ips.length&&failed.length){alert('取 DNS 服务器 IP 失败，命令未复制：'+failed.join('；')+'。请稍后重试，或重新登录后再试。');return}
-  const tag=node?node.name+'（'+(node.ip||'')+'，'+(node.region||'')+'）':'节点';
+  // R2-11：注释头不再带节点 IP——列表接口只给打码 IP（203.0.*.*），写进头里
+  // 行绑定打了折扣；只留名 + 地区（选 (b)：不为这一个头多调一次 reveal，
+  // 也不新开端点——节点已有 /api/v1/nodes/{id}/reveal，但只为拼头不值）。
+  const tag=node?node.name+(node.region?'（'+node.region+'）':''):'节点';
   const head='# 在「'+String(tag).replace(/[\r\n]/g,' ')+'」这台机器上执行：装 SNI 解锁代理；执行时会问 agent token，填任意一台已登记 DNS 服务器的 token。';
   let c=head+'\n'+'curl -fsSL '+location.origin+'/install.sh | ';
   if(ips.length)c+='DNS_SNI_ALLOWLIST='+sq(ips.join(','))+' ';
@@ -803,6 +814,7 @@ async function copyNodeInstall(nodeId){
   navigator.clipboard.writeText(c);
   let msg='已复制「'+(node?node.name:'节点')+'」的安装命令，到这台机器粘贴执行。执行时会问 agent token：填任意一台已登记 DNS 服务器的 token（「DNS 服务器」页可查看）。';
   if(!ips.length)msg+='（allowlist 未填：已登记的服务器没有可用的 IP，安装时按提示输入 DNS 服务器 IP。）';
+  if(emptyIp.length)msg+='注意：以下服务器未返回 IP，已跳过：'+emptyIp.join('、')+'。';
   if(failed.length)msg+='注意：以下服务器的 IP 没取到，allowlist 可能不全：'+failed.join('；')+'。';
   alert(msg);
 }
