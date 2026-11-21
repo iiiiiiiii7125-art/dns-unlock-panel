@@ -1,0 +1,18 @@
+tok1: dc2f8ee9710d...
+{"ok":true}
+
+HTTP 200
+tok2: e2825851eb45...
+--- PUT rule as ruleForm() sends it (prefer_fastest:true) ---
+{"platform_id":"netflix","region":"JP","prefer_fastest":true,"mode":"address"}
+
+HTTP 200
+--- GET rules: netflix ---
+has_rule: True
+rule: {"platform_id": "netflix", "region": "JP", "prefer_fastest": true, "mode": "address"}
+--- PUT prefer_fastest:false ---
+HTTP 200
+rule after off: {"platform_id": "netflix", "region": "JP", "mode": "address"}
+--- PUT prefer_fastest omitted (old body) ---
+HTTP 200
+rule after omitted: {"platform_id": "netflix", "region": "JP", "mode": "address"}

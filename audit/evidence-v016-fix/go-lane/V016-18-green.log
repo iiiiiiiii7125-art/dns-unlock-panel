@@ -1,0 +1,15 @@
+=== RUN   TestRunCheckUnresolvableRuleFails
+--- PASS: TestRunCheckUnresolvableRuleFails (0.17s)
+=== RUN   TestNewQuietAllowlistWarning
+--- PASS: TestNewQuietAllowlistWarning (0.00s)
+=== RUN   TestRunCheckViaAgent
+--- PASS: TestRunCheckViaAgent (0.22s)
+=== RUN   TestRunCheckViaUpstream
+--- PASS: TestRunCheckViaUpstream (0.16s)
+=== RUN   TestRunCheckNoRules
+--- PASS: TestRunCheckNoRules (0.00s)
+=== RUN   TestRunCheckAgentDown
+--- PASS: TestRunCheckAgentDown (0.00s)
+=== RUN   TestRunCheckErrors
+--- PASS: TestRunCheckErrors (0.00s)
+ok  	dnsunlock/internal/dnsagent	0.562s

@@ -1,0 +1,5 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestAgentConfigKeepsUnresolvableRules
+--- PASS: TestAgentConfigKeepsUnresolvableRules (0.41s)
+PASS
+ok  	dnsunlock/internal/panel	0.439s

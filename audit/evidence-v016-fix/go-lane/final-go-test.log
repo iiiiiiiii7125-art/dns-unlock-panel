@@ -1,0 +1,9 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+?   	dnsunlock/cmd/dnsunlock	[no test files]
+ok  	dnsunlock/internal/dnsagent	18.657s
+?   	dnsunlock/internal/model	[no test files]
+ok  	dnsunlock/internal/panel	1.719s
+ok  	dnsunlock/internal/sniproxy	0.474s
+?   	dnsunlock/internal/store	[no test files]
+?   	dnsunlock/scripts/rig/bindhold	[no test files]
+?   	dnsunlock/scripts/rig/bindprobe	[no test files]

@@ -1,0 +1,8 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestPktinfoFamilyFromSocket
+2026/11/21 12:13:21 dns-agent: cannot enable pktinfo (protocol not available); replies to 127.0.0.53 may be dropped on source check
+    udp_stub_test.go:71: AF_INET socket + wildcard addr: pktinfo inactive (V016-11: fell back to plain replies)
+--- FAIL: TestPktinfoFamilyFromSocket (0.00s)
+FAIL
+FAIL	dnsunlock/internal/dnsagent	0.008s
+FAIL

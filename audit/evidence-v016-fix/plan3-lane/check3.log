@@ -1,0 +1,38 @@
+extracted check fns: bash -n OK
+--- direct check --via upstream (no agent needed) ---
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+udp sendto blocked (sandbox): [Errno 1] Operation not permitted
+netflix	netflix.com	93.184.216.34	FAIL	TCP :443 / TLS handshake failed
+exit=1
+--- agent log tail ---
+2026/11/21 12:48:28 dns-agent listening on 127.0.0.1:15354  panel=http://127.0.0.1:18081  server=srv-test
+--- direct check --via agent ---
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+netflix	netflix.com	127.0.0.1	OK	3
+exit=0
+=== installer functions, as the installer calls them ===
+--- 基线（接管前）：dnsunlock check --via upstream ---
+udp sendto blocked (sandbox): [Errno 1] Operation not permitted
+  netflix	netflix.com	93.184.216.34	FAIL	TCP :443 / TLS handshake failed
+  check 诊断（stderr）:
+  [agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+  警告: 基线（接管前）：有规则未通过（exit 1，见上表 FAIL 行），不致命，继续安装。
+--- 复测（接管后）：dnsunlock check --via agent ---
+  netflix	netflix.com	127.0.0.1	OK	2
+  check 诊断（stderr）:
+  [agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+  复测（接管后）：全部通过（exit 0）。
+=== 接管前后基线对比（基线 --via upstream → 复测 --via agent）===
+  期望：规则域名从上游 IP 变为规则 IP（状态 OK）；无规则的域名两次都走上游。
+  netflix netflix.com: 基线 93.184.216.34(FAIL) -> 复测 127.0.0.1(OK) [变化]
+=== failure path: kill agent, re-run recheck (must warn, not die) ===
+--- 复测（agent 已停）：dnsunlock check --via agent ---
+  netflix	netflix.com	-	FAIL	no reply from DNS 127.0.0.1:15354
+  check 诊断（stderr）:
+  [agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+  警告: 复测（agent 已停）：有规则未通过（exit 1，见上表 FAIL 行），不致命，继续安装。
+run_dnsunlock_check returned non-zero (expected) -> installer continues
+CONTINUED after failed check (non-fatal proven)
+=== missing binary path ===
+  警告: 基线（无二进制）：/usr/local/bin/dnsunlock 不存在，跳过 dnsunlock check（不致命，继续安装）。
+missing-binary rc handled, installer continues

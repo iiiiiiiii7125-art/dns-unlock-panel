@@ -1,0 +1,7 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestPktinfoSyscallConnFailureLogs
+    udp_stub_test.go:121: no SyscallConn log line; log output = ""
+--- FAIL: TestPktinfoSyscallConnFailureLogs (0.00s)
+FAIL
+FAIL	dnsunlock/internal/dnsagent	0.008s
+FAIL

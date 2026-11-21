@@ -1,0 +1,21 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestSelftestRoundTrip
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+[agent] selftest st-test-1 done: 1 platforms
+--- PASS: TestSelftestRoundTrip (0.59s)
+=== RUN   TestSelftestProbesInParallel
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+[agent] selftest st-parallel done: 4 platforms
+    selftest_test.go:233: 4 blackholed rules self-tested in 5.001s
+--- PASS: TestSelftestProbesInParallel (5.00s)
+=== RUN   TestSelftestHeartbeatFailureRestores
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+[agent] heartbeat failed: Post "http://127.0.0.1:8080/api/v1/agent/heartbeat?server_id=srv-1": dial tcp 127.0.0.1:8080: connect: connection refused
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+--- PASS: TestSelftestHeartbeatFailureRestores (0.00s)
+=== RUN   TestSelftestProbeFailure
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+[agent] selftest st-fail done: 2 platforms
+--- PASS: TestSelftestProbeFailure (5.06s)
+PASS
+ok  	dnsunlock/internal/dnsagent	10.660s

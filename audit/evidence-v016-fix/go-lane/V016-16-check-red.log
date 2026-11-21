@@ -1,0 +1,8 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestRunCheckUnresolvableRuleFails
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+    check_test.go:187: RunCheck = [{bbciplayer bbci.co.uk 127.0.0.1 true 61 }],0 want 1 row, code 1
+--- FAIL: TestRunCheckUnresolvableRuleFails (0.79s)
+FAIL
+FAIL	dnsunlock/internal/dnsagent	0.898s
+FAIL

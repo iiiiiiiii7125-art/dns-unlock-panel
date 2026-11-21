@@ -1,0 +1,11 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestRedV01631FixedID
+    zz_red_v01631_test.go:16: RED confirmed: buildQuery always emits fixed ID 0x1234
+--- PASS: TestRedV01631FixedID (0.00s)
+=== RUN   TestRedV01631NoValidation
+    zz_red_v01631_test.go:29: RED confirmed: parseAnswerA accepts a wrong-ID response
+    zz_red_v01631_test.go:36: RED confirmed: parseAnswerA accepts RCODE=SERVFAIL
+    zz_red_v01631_test.go:50: RED confirmed: 300-byte label wrapped to length byte 44
+--- PASS: TestRedV01631NoValidation (0.00s)
+PASS
+ok  	dnsunlock/internal/dnsagent	0.008s

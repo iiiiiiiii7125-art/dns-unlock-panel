@@ -1,0 +1,45 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestBuildQueryRandomIDAndLabelChecks
+--- PASS: TestBuildQueryRandomIDAndLabelChecks (0.00s)
+=== RUN   TestParseAnswerAValidatesIDAndRcode
+--- PASS: TestParseAnswerAValidatesIDAndRcode (0.00s)
+=== RUN   TestCheckLineFormat
+--- PASS: TestCheckLineFormat (0.00s)
+=== RUN   TestRunCheckViaAgent
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+--- PASS: TestRunCheckViaAgent (0.10s)
+=== RUN   TestRunCheckViaUpstream
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+--- PASS: TestRunCheckViaUpstream (0.19s)
+=== RUN   TestRunCheckNoRules
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+--- PASS: TestRunCheckNoRules (0.00s)
+=== RUN   TestRunCheckAgentDown
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+    check_test.go:244: agent-down check took 2ms
+--- PASS: TestRunCheckAgentDown (0.00s)
+=== RUN   TestRunCheckErrors
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+--- PASS: TestRunCheckErrors (0.00s)
+=== RUN   TestPktinfoOOBRoundTrip
+--- PASS: TestPktinfoOOBRoundTrip (0.00s)
+=== RUN   TestPktinfoFamilyFromSocket
+2026/11/21 12:17:47 dns-agent: IPV6_RECVPKTINFO not supported on this socket (protocol not available); using IP_PKTINFO instead
+--- PASS: TestPktinfoFamilyFromSocket (0.00s)
+=== RUN   TestPktinfoSyscallConnFailureLogs
+--- PASS: TestPktinfoSyscallConnFailureLogs (0.00s)
+=== RUN   TestPktinfoClosedConnInactive
+--- PASS: TestPktinfoClosedConnInactive (0.00s)
+=== RUN   TestPktinfoSetsockoptFailureLogged
+--- PASS: TestPktinfoSetsockoptFailureLogged (0.00s)
+=== RUN   TestPktinfoLiveKernelOOB
+--- PASS: TestPktinfoLiveKernelOOB (0.00s)
+=== RUN   TestServeUDPLiveReplySource
+    udp_stub_test.go:323: environment blocks UDP sends (EPERM); query handling proven via total counter, reply source needs a real machine
+--- SKIP: TestServeUDPLiveReplySource (0.07s)
+=== RUN   TestServeUDPStarts
+    udp_stub_test.go:348: :53 already held
+--- SKIP: TestServeUDPStarts (0.00s)
+PASS
+ok  	dnsunlock/internal/dnsagent	0.375s

@@ -1,0 +1,12 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestSelftestRoundTrip
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+[agent] selftest st-test-1 done: 1 platforms
+--- PASS: TestSelftestRoundTrip (0.43s)
+=== RUN   TestSelftestDoneExpires
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+[agent] selftest st-legacy done: 0 platforms
+[agent] selftest st-stale done: 0 platforms
+--- PASS: TestSelftestDoneExpires (0.50s)
+PASS
+ok  	dnsunlock/internal/dnsagent	0.935s

@@ -1,0 +1,23 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestRunCheckUnresolvableRuleFails
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+--- PASS: TestRunCheckUnresolvableRuleFails (0.51s)
+=== RUN   TestRunCheckViaAgent
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+--- PASS: TestRunCheckViaAgent (0.58s)
+=== RUN   TestRunCheckViaUpstream
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+--- PASS: TestRunCheckViaUpstream (0.39s)
+=== RUN   TestRunCheckNoRules
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+--- PASS: TestRunCheckNoRules (0.00s)
+=== RUN   TestRunCheckAgentDown
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+    check_test.go:284: agent-down check took 1ms
+--- PASS: TestRunCheckAgentDown (0.00s)
+=== RUN   TestRunCheckErrors
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.
+--- PASS: TestRunCheckErrors (0.00s)
+PASS
+ok  	dnsunlock/internal/dnsagent	1.506s

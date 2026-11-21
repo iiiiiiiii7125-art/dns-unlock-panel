@@ -1,0 +1,14 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestPktinfoClosedConnInactive
+    udp_stub_test.go:148: closed conn: pktinfo active=true, want false (Control error must not be ignored)
+--- FAIL: TestPktinfoClosedConnInactive (0.00s)
+=== RUN   TestPktinfoSetsockoptFailureLogged
+--- PASS: TestPktinfoSetsockoptFailureLogged (0.00s)
+=== RUN   TestPktinfoLiveKernelOOB
+--- PASS: TestPktinfoLiveKernelOOB (0.00s)
+=== RUN   TestServeUDPLiveReplySource
+    udp_stub_test.go:296: environment blocks UDP sends (EPERM); query handling proven via total counter, reply source needs a real machine
+--- SKIP: TestServeUDPLiveReplySource (0.07s)
+FAIL
+FAIL	dnsunlock/internal/dnsagent	0.082s
+FAIL

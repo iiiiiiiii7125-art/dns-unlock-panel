@@ -1,0 +1,7 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestAgentConfigKeepsUnresolvableRules
+    agent_config_test.go:58: bbciplayer rule missing from agent config (rules=[]); check would print NO_RULES
+--- FAIL: TestAgentConfigKeepsUnresolvableRules (0.59s)
+FAIL
+FAIL	dnsunlock/internal/panel	0.683s
+FAIL

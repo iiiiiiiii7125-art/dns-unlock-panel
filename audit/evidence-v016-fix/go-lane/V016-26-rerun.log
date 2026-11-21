@@ -1,0 +1,6 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestServeUDPLiveReplySource
+    udp_stub_test.go:296: environment blocks UDP sends (EPERM); query handling proven via total counter, reply source needs a real machine
+--- SKIP: TestServeUDPLiveReplySource (0.07s)
+PASS
+ok  	dnsunlock/internal/dnsagent	0.080s

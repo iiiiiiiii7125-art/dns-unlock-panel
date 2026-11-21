@@ -1,0 +1,10 @@
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+=== RUN   TestPktinfoOOBRoundTrip
+--- PASS: TestPktinfoOOBRoundTrip (0.00s)
+=== RUN   TestPktinfoFamilyFromSocket
+2026/11/21 12:14:16 dns-agent: IPV6_RECVPKTINFO not supported on this socket (protocol not available); using IP_PKTINFO instead
+--- PASS: TestPktinfoFamilyFromSocket (0.00s)
+=== RUN   TestPktinfoSyscallConnFailureLogs
+--- PASS: TestPktinfoSyscallConnFailureLogs (0.00s)
+PASS
+ok  	dnsunlock/internal/dnsagent	0.008s

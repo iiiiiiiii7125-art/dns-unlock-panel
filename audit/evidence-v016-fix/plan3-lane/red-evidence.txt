@@ -1,0 +1,9 @@
+=== RED EVIDENCE (baseline 374e7b7) ===
+probe_panel md5 current: 29aafc27a2227a72a7c61f734d51384f  -
+probe_panel md5 817c606: 29aafc27a2227a72a7c61f734d51384f  -
+dnsunlock check calls in install.sh: 0
+prefer_fastest in web/index.html: 0
+prefer_fastest in assets index.html: 0
+run_speed_test refs:
+scripts/install.sh:824:  # 注意：测速环节缺 dig 仍是致命的（见 pick_fastest_ip / run_speed_test 的约定），只在应用后验证环节可降级。
+internal/panel/assets/install.sh:824:  # 注意：测速环节缺 dig 仍是致命的（见 pick_fastest_ip / run_speed_test 的约定），只在应用后验证环节可降级。
