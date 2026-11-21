@@ -115,6 +115,7 @@ type Agent struct {
 	selftestMu     sync.Mutex
 	selftestRun    map[string]bool // request id -> currently running
 	selftestDone   map[string]bool // request id -> already ran (dedupe)
+	selftestDoneAt map[string]time.Time // request id -> when it ran (V016-34: expiry)
 	selftestResult *model.SelftestResult
 	selftestRuns   int // runs started (test hook)
 	// panel fallback (v0.1.3): candidate panel endpoints, built once
@@ -164,7 +165,7 @@ func New(cfg Config) *Agent {
 		upstream: cfg.Upstream, upstreams: []string{cfg.Upstream, "8.8.8.8"}, perPlat: map[string]int64{},
 		health: map[string]*nodeHealth{}, rules: map[string]model.AgentRule{},
 		override: map[string]string{}, allowIPs: map[string]bool{},
-		selftestRun: map[string]bool{}, selftestDone: map[string]bool{},
+		selftestRun: map[string]bool{}, selftestDone: map[string]bool{}, selftestDoneAt: map[string]time.Time{},
 		panelCandidates: panelCandidates(cfg.PanelURL),
 		cache:           map[string]cacheEntry{}, lastFetch: time.Now(), lastFetchOK: true,
 		sem: make(chan struct{}, 256),
@@ -439,10 +440,29 @@ func (a *Agent) fetchConfig() error {
 // maybeStartSelftest starts one run for a queued request, unless this
 // request already ran or is running (the panel may deliver it twice).
 func (a *Agent) maybeStartSelftest(req *model.SelftestRequest) {
+	// V016-34: selftestDone used to grow forever — one entry per
+	// request, never cleaned. Prune entries older than an hour on
+	// every poll (the panel only re-delivers a request inside its
+	// 10-minute pending window, so an hour comfortably covers the
+	// dedupe window). Entries without a timestamp predate this
+	// change and are pruned too.
+	a.selftestMu.Lock()
+	now := time.Now()
+	for id, at := range a.selftestDoneAt {
+		if now.Sub(at) > time.Hour {
+			delete(a.selftestDone, id)
+			delete(a.selftestDoneAt, id)
+		}
+	}
+	for id := range a.selftestDone {
+		if _, ok := a.selftestDoneAt[id]; !ok {
+			delete(a.selftestDone, id)
+		}
+	}
 	if req == nil || req.ID == "" {
+		a.selftestMu.Unlock()
 		return
 	}
-	a.selftestMu.Lock()
 	if a.selftestDone[req.ID] || a.selftestRun[req.ID] {
 		a.selftestMu.Unlock()
 		return
@@ -463,6 +483,7 @@ func (a *Agent) runSelftest(req model.SelftestRequest) {
 		a.selftestMu.Lock()
 		delete(a.selftestRun, req.ID)
 		a.selftestDone[req.ID] = true
+		a.selftestDoneAt[req.ID] = time.Now()
 		a.selftestMu.Unlock()
 	}()
 	a.rulesMu.Lock()

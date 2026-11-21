@@ -292,6 +292,55 @@ func TestSelftestHeartbeatFailureRestores(t *testing.T) {
 	}
 }
 
+// TestSelftestDoneExpires (V016-34, Go part): selftestDone entries
+// older than an hour (or without a timestamp, predating the fix) are
+// pruned on the next poll, so the same request id can run again; a
+// fresh entry still dedupes a repeated delivery.
+func TestSelftestDoneExpires(t *testing.T) {
+	a := New(Config{PanelURL: "http://127.0.0.1:8080", Token: "t", ServerID: "srv-1"})
+	now := time.Now()
+	a.selftestMu.Lock()
+	a.selftestDone["st-stale"] = true
+	a.selftestDoneAt["st-stale"] = now.Add(-2 * time.Hour)
+	a.selftestDone["st-legacy"] = true // no timestamp: predates the fix
+	a.selftestDone["st-fresh"] = true
+	a.selftestDoneAt["st-fresh"] = now
+	a.selftestMu.Unlock()
+
+	a.maybeStartSelftest(&model.SelftestRequest{ID: "st-stale"})
+	a.maybeStartSelftest(&model.SelftestRequest{ID: "st-legacy"})
+	time.Sleep(300 * time.Millisecond)
+	a.selftestMu.Lock()
+	runs := a.selftestRuns
+	// The re-runs re-record the ids with fresh timestamps; the point
+	// is they RAN (runs==2) and their timestamps are now fresh, not
+	// the stale ones the test seeded.
+	staleAt, staleLeft := a.selftestDoneAt["st-stale"]
+	legacyAt, legacyLeft := a.selftestDoneAt["st-legacy"]
+	_, freshLeft := a.selftestDone["st-fresh"]
+	a.selftestMu.Unlock()
+	if runs != 2 {
+		t.Fatalf("selftest runs = %d, want 2 (stale + legacy entries must expire)", runs)
+	}
+	if !staleLeft || time.Since(staleAt) > time.Minute {
+		t.Fatalf("st-stale timestamp = %v (present=%v), want a fresh re-run timestamp", staleAt, staleLeft)
+	}
+	if !legacyLeft || time.Since(legacyAt) > time.Minute {
+		t.Fatalf("st-legacy timestamp = %v (present=%v), want a fresh re-run timestamp", legacyAt, legacyLeft)
+	}
+	if !freshLeft {
+		t.Fatalf("fresh entry was pruned; it must still dedupe")
+	}
+	a.maybeStartSelftest(&model.SelftestRequest{ID: "st-fresh"})
+	time.Sleep(200 * time.Millisecond)
+	a.selftestMu.Lock()
+	runs2 := a.selftestRuns
+	a.selftestMu.Unlock()
+	if runs2 != 2 {
+		t.Fatalf("selftest runs = %d, want 2 (fresh entry must still dedupe)", runs2)
+	}
+}
+
 // A rule whose unlock IP has no TLS listener fails the row (not a crash)
 // and the run still reports the other platforms.
 func TestSelftestProbeFailure(t *testing.T) {
