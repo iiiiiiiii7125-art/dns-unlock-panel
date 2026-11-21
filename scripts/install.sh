@@ -62,18 +62,51 @@ ask() {
 has_tty() { { : < /dev/tty; } 2>/dev/null; }
 # 计时不用 date +%s%N（Alpine/busybox 上不可靠，见审计 P3-06）：有 python3 就用它计时，
 # 没有就只按通/不通排序，不编造毫秒数。
+# v0.1.6 V016-04：并行测全部候选 IP（每个 /dev/tcp :443 探测放后台跑，
+# 各 3 秒超时），按延迟排序，选最快且可达的；只影响选默认解锁 IP，
+# 不改变 agent 的规则/分流行为。stdout 末行仍是选中的 IP（调用方取 tail -1）。
 pick_fastest_ip() {
   local best="" ip
   IFS=',' read -ra IPS <<< "$1"
-  for ip in "${IPS[@]}"; do
-    ip="$(echo "$ip" | tr -d ' ')"
+  local tmpdir idx _st _ms _ip
+  tmpdir="$(mktemp -d /tmp/dnsunlock-speed.XXXXXX)"
+  for idx in "${!IPS[@]}"; do
+    ip="$(echo "${IPS[$idx]}" | tr -d ' ')"
     [ -z "$ip" ] && continue
-    if timeout 3 bash -c "echo > /dev/tcp/$ip/443" 2>/dev/null; then
-      echo "  测速 $ip :443 -> 通"
-      [ -z "$best" ] && best="$ip"
-    else
-      echo "  测速 $ip :443 -> 不通"
-    fi
+    (
+      _start="$(python3 -c 'import time;print(time.time())' 2>/dev/null || echo "")"
+      if timeout 3 bash -c "echo > /dev/tcp/$ip/443" 2>/dev/null; then _st="ok"; else _st="fail"; fi
+      _end="$(python3 -c 'import time;print(time.time())' 2>/dev/null || echo "")"
+      if [ -n "$_start" ] && [ -n "$_end" ]; then
+        _ms="$(awk -v a="$_start" -v b="$_end" 'BEGIN{printf "%.0f", (b-a)*1000}')"
+      else
+        _ms="-1"
+      fi
+      printf '%s %s %s\n' "$_st" "$_ms" "$ip" > "$tmpdir/$idx"
+    ) &
+  done
+  wait || true
+  local timed=() untimed=() failed=()
+  for idx in "${!IPS[@]}"; do
+    [ -f "$tmpdir/$idx" ] || continue
+    read -r _st _ms _ip < "$tmpdir/$idx"
+    if [ "$_st" = "ok" ] && [ "$_ms" != "-1" ]; then timed+=("$_ms"$'\t'"$_ip");
+    elif [ "$_st" = "ok" ]; then untimed+=("$_ip");
+    else failed+=("$_ip"); fi
+  done
+  rm -rf "$tmpdir"
+  if [ "${#timed[@]}" -gt 0 ]; then
+    while IFS=$'\t' read -r _ms _ip; do
+      echo "  测速 $_ip :443 -> 通（${_ms} ms）"
+      [ -z "$best" ] && best="$_ip"
+    done < <(printf '%s\n' "${timed[@]}" | sort -n)
+  fi
+  for _ip in "${untimed[@]}"; do
+    echo "  测速 $_ip :443 -> 通"
+    [ -z "$best" ] && best="$_ip"
+  done
+  for _ip in "${failed[@]}"; do
+    echo "  测速 $_ip :443 -> 不通"
   done
   echo "$best"
 }
@@ -234,7 +267,8 @@ ask_yes_no() {
 # 优先 getent hosts（走 glibc，遵守 resolv.conf 的 options use-vc），
 # 缺 getent 回退不带 @server 的 dig（use-vc 时加 +tcp）。
 # 返回 0=解析成功，1=解析失败，2=没工具（只警告，不 abort）。
-# 注意：缺 dig 只在这里可降级；测速环节缺 dig 仍是致命的（两处不要混淆）。
+# 注意：测速环节（pick_fastest_ip 用 /dev/tcp，probe_panel 用 curl）
+# 本来就不用 dig；缺 dig 只影响这里和 [4/6] 的验证，且只警告、不致命。
 verify_system_dns() {
   local domain="$1" out=""
   if command -v getent >/dev/null 2>&1; then
@@ -295,6 +329,75 @@ verify_rule_domain() {
     echo "  警告: 规则域名 $domain 系统解析无结果（规则 IP 应为 $node_ip，请人工核对）" >&2
   fi
   return 1
+}
+
+# v0.1.6 V016-05：跑一次 `dnsunlock check` 并打印结果。
+# $1 = 标签（如“基线（接管前）”），$2 = --via 值（upstream/agent），$3 = 输出文件。
+# check 的 exit 契约（见 cmd/dnsunlock/main.go runCheck）：0 全部通过，
+# 1 有 FAIL，2 配置/用法错误。任何失败都不致命（警告 + 继续，呼应计划
+# 第 2 项“验证不致命”），但失败原因要写清楚；输出文件留给接管后的对比用。
+run_dnsunlock_check() {
+  local label="$1" via="$2" outfile="$3" rc=0
+  if [ ! -x /usr/local/bin/dnsunlock ]; then
+    echo "  警告: $label：/usr/local/bin/dnsunlock 不存在，跳过 dnsunlock check（不致命，继续安装）。" >&2
+    return 2
+  fi
+  if [ ! -f /etc/dnsunlock/config.json ]; then
+    echo "  警告: $label：/etc/dnsunlock/config.json 不存在，跳过 dnsunlock check（不致命，继续安装）。" >&2
+    return 2
+  fi
+  echo "--- $label：dnsunlock check --via $via ---"
+  if /usr/local/bin/dnsunlock check --config /etc/dnsunlock/config.json --via "$via" >"$outfile" 2>"$outfile.err"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  if [ -s "$outfile" ]; then
+    sed 's/^/  /' "$outfile"
+  else
+    echo "  （check 无 stdout 输出）"
+  fi
+  if [ -s "$outfile.err" ]; then
+    echo "  check 诊断（stderr）:"
+    sed 's/^/  /' "$outfile.err"
+  fi
+  case "$rc" in
+    0) echo "  $label：全部通过（exit 0）。" ;;
+    1) echo "  警告: $label：有规则未通过（exit 1，见上表 FAIL 行），不致命，继续安装。" >&2 ;;
+    *) echo "  警告: $label：dnsunlock check 无法完成（exit $rc，见上），不致命，继续安装。" >&2 ;;
+  esac
+  return "$rc"
+}
+
+# v0.1.6 V016-05：接管前后基线对比。$1 = 基线文件，$2 = 复测文件。
+# check 输出每行：平台<TAB>域名<TAB>IP<TAB>OK|FAIL<TAB>延迟 ms 或错误。
+# 只负责调用结果的对比展示，不改 check 本身的输出逻辑（V016-16/18 另修）。
+print_check_comparison() {
+  local base="$1" after="$2"
+  echo "=== 接管前后基线对比（基线 --via upstream → 复测 --via agent）==="
+  echo "  期望：规则域名从上游 IP 变为规则 IP（状态 OK）；无规则的域名两次都走上游。"
+  if [ ! -s "$base" ] || [ ! -s "$after" ]; then
+    echo "  对比跳过：基线或复测无输出（check 未完成，见上）。"
+    return 2
+  fi
+  if grep -qx "NO_RULES" "$base" || grep -qx "NO_RULES" "$after"; then
+    echo "  未设规则（基线或复测为 NO_RULES），无可对比。"
+    return 0
+  fi
+  awk -F'\t' '
+    FNR==NR { bip[$1]=$3; bst[$1]=$4; bdom[$1]=$2; next }
+    {
+      if ($1 in bip) {
+        chg = (bip[$1] != $3 || bst[$1] != $4) ? "变化" : "一致"
+        printf "  %s %s: 基线 %s(%s) -> 复测 %s(%s) [%s]\n", $1, $2, bip[$1], bst[$1], $3, $4, chg
+        seen[$1]=1
+      } else {
+        printf "  %s %s: 仅复测有 %s(%s)（基线无此平台）\n", $1, $2, $3, $4
+      }
+    }
+    END {
+      for (p in bip) if (!(p in seen)) printf "  %s %s: 仅基线有 %s(%s)（复测无此平台）\n", p, bdom[p], bip[p], bst[p]
+    }' "$base" "$after"
 }
 
 # v0.1.6 item 1：结构化备份。
@@ -483,12 +586,13 @@ apply_temp_dns() {
   verify_system_dns example.com || echo "警告: 临时模式接管后系统解析验证未通过（见上），请检查 agent 是否在跑；还原办法见上。" >&2
 }
 
-# v0.1.3 容错：面板 443 被挡时不要硬等 134 秒。候选顺序：
+# v0.1.3 容错：面板 443 被挡时不要硬等 134 秒。候选入口：
 # (a) 配置的 PANEL_URL 本身，(b) 同一主机 http :8080（面板本身一直监听
 # :8080，443 只是 Caddy 的反代），(c) 同一主机解析出的 IP :8080。
-# 每个候选只探一次（--max-time 8）；任何 HTTP 响应都算通（没 token 的
-# whoami 回 401 也算，说明到面板了）。成功时 stdout 只输出选中的地址，
-# 诊断打到 stderr。都不通返回 1。
+# v0.1.6 V016-04：全部候选并行探测（curl 计时，--max-time 8），按延迟
+# 排序选最快且可达的，不再是“第一个通的就赢”。任何 HTTP 响应都算通
+# （没 token 的 whoami 回 401 也算，说明到面板了）。成功时 stdout 只
+# 输出选中的地址，诊断打到 stderr。都不通返回 1。
 probe_panel() {
   local base="$1" scheme rest hostport host port ip
   local cands=() uniq=() cand code u seen
@@ -524,17 +628,45 @@ probe_panel() {
     for u in "${uniq[@]}"; do [ "$u" = "$cand" ] && seen=1; done
     [ "$seen" = 0 ] && uniq+=("$cand")
   done
+  # v0.1.6 V016-04：并行测全部候选入口（curl 计时，8 秒超时），按延迟
+  # 排序选最快且可达的做 PANEL_BASE，并打印排名；测速只影响选入口，
+  # 不改变 agent 的规则/分流行为。成功时 stdout 只输出选中的地址，
+  # 诊断打到 stderr。都不通返回 1。
+  local tmpdir
+  tmpdir="$(mktemp -d /tmp/dnsunlock-probe.XXXXXX)"
+  local i=0
   for cand in "${uniq[@]}"; do
-    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 "$cand/api/v1/agent/whoami" 2>/dev/null || true)
-    if [ -n "$code" ] && [ "$code" != "000" ]; then
-      echo "$cand"
-      return 0
-    fi
-    echo "  探测 $cand -> 不通（HTTP ${code:-000}）" >&2
+    ( out="$(curl -s -o /dev/null -w "%{http_code} %{time_total}" --max-time 8 "$cand/api/v1/agent/whoami" 2>/dev/null)" && printf '%s\n' "$out" > "$tmpdir/$i" || echo "000 0" > "$tmpdir/$i" ) &
+    i=$((i+1))
   done
-  echo "面板都连不上，试过：${uniq[*]}" >&2
-  echo "请检查面板是否在运行；如果 443 被挡，可用 --panel 指定面板机的内网地址，如：bash install.sh --panel http://<面板机内网IP>:8080；面板和 agent 在同一台机器上时可用 --panel http://127.0.0.1:8080" >&2
-  return 1
+  wait || true
+  local results=() ms code tsec
+  i=0
+  for cand in "${uniq[@]}"; do
+    if read -r code tsec < "$tmpdir/$i" 2>/dev/null && [ -n "$code" ] && [ "$code" != "000" ]; then
+      ms="$(awk -v t="$tsec" 'BEGIN{printf "%.0f", t*1000}')"
+      results+=("$ms"$'\t'"$cand"$'\t'"$code")
+    else
+      echo "  探测 $cand -> 不通（HTTP ${code:-000}）" >&2
+    fi
+    i=$((i+1))
+  done
+  if [ "${#results[@]}" -eq 0 ]; then
+    rm -rf "$tmpdir"
+    echo "面板都连不上，试过：${uniq[*]}" >&2
+    echo "请检查面板是否在运行；如果 443 被挡，可用 --panel 指定面板机的内网地址，如：bash install.sh --panel http://<面板机内网IP>:8080；面板和 agent 在同一台机器上时可用 --panel http://127.0.0.1:8080" >&2
+    return 1
+  fi
+  local ranked best
+  ranked="$(printf '%s\n' "${results[@]}" | sort -n)"
+  echo "  面板入口测速排名（并行探测，8 秒超时，最快在前）：" >&2
+  echo "$ranked" | while IFS=$'\t' read -r ms cand code; do
+    echo "    $cand -> HTTP $code，${ms} ms" >&2
+  done
+  best="$(echo "$ranked" | head -1 | cut -f2)"
+  rm -rf "$tmpdir"
+  echo "$best"
+  return 0
 }
 
 # v0.1.6 item 6：validate_ipv4（照抄 AKDNS：正则 + 每段 ≤255）。
@@ -821,11 +953,19 @@ if command -v dig >/dev/null 2>&1; then
 else
   # v0.1.6 item 2：缺 dig 不再 exit 1——区分“测不了”和“测了不通”。
   # 测不了只警告 + 继续安装（接管步必须能跑到）；dig 在但解析无结果仍是硬失败（见上）。
-  # 注意：测速环节缺 dig 仍是致命的（见 pick_fastest_ip / run_speed_test 的约定），只在应用后验证环节可降级。
   echo "  警告: 未装 dig，无法自动验证解析，继续安装（agent 本身不受影响）。"
   echo "  请手动验证：dig @$_dl_host -p $_dl_port example.com A（装 dig：Debian/Ubuntu 用 apt-get install -y dnsutils，RHEL/CentOS 用 yum install -y bind-utils）"
   echo "  也可不用 dig：getent hosts example.com（走系统解析器；接管后才有效）"
 fi
+
+# v0.1.6 V016-05：接管前基线（dnsunlock check --via upstream：规则域名
+# 走上游直接解析的结果）。接管后在接管/临时分支内再跑一次 --via agent
+# 做复测，两次结果并排对比打印。check 失败不致命（警告 + 继续），但
+# 失败要写清楚（见 run_dnsunlock_check）。未接管时只有基线，无复测。
+BASELINE_CHECK_FILE="$(mktemp /tmp/dnsunlock-check-baseline.XXXXXX)"
+AFTER_CHECK_FILE="$(mktemp /tmp/dnsunlock-check-after.XXXXXX)"
+CHECK_COMPARED=0
+run_dnsunlock_check "基线（接管前）" "upstream" "$BASELINE_CHECK_FILE" || true
 
 # 6. 可选: 把本机系统 DNS 设为 127.0.0.1（默认不做，需确认）。
 # --temp 临时模式：只把本次运行的 DNS 指到 agent，不做永久接管（见 apply_temp_dns）。
@@ -833,6 +973,10 @@ if [ "${TEMP_MODE:-0}" = "1" ]; then
   echo
   echo "=== 临时模式（--temp）：只把本次运行的 DNS 指到 agent，不做永久接管 ==="
   apply_temp_dns
+  # v0.1.6 V016-05：临时模式复测 + 基线对比（失败只警告，不致命）。
+  run_dnsunlock_check "复测（临时模式）" "agent" "$AFTER_CHECK_FILE" || true
+  print_check_comparison "$BASELINE_CHECK_FILE" "$AFTER_CHECK_FILE" || true
+  CHECK_COMPARED=1
 # P1-REAL-01 补充：resolv.conf 由 Tailscale 生成的机器绝对不接管——
 # Tailscale 的 DNS（100.100.100.100）一旦被覆盖，内网机器就连不上了。
 elif grep -qi "tailscale" /etc/resolv.conf 2>/dev/null || grep -q "nameserver 100.100.100.100" /etc/resolv.conf 2>/dev/null; then
@@ -989,8 +1133,15 @@ PYEOF
   else
     echo "本机 DNS 已设为 127.0.0.1（UDP 直连 agent），还原命令: dnsunlock-restore-dns"
   fi
+  # v0.1.6 V016-05：接管后复测 + 基线对比（失败只警告，不致命）。
+  run_dnsunlock_check "复测（接管后）" "agent" "$AFTER_CHECK_FILE" || true
+  print_check_comparison "$BASELINE_CHECK_FILE" "$AFTER_CHECK_FILE" || true
+  CHECK_COMPARED=1
 fi
 fi # 非 Tailscale resolv.conf 的机器才问是否接管；Tailscale 的机器直接跳过
+if [ "$CHECK_COMPARED" != "1" ]; then
+  echo "（未接管：接管前基线见上，无复测对比；要复测可跑 /usr/local/bin/dnsunlock check --config /etc/dnsunlock/config.json --via agent）"
+fi
 # 一键还原脚本（无论是否接管都装上）
 cat > /usr/local/bin/dnsunlock-restore-dns <<'RESTORE_EOF'
 #!/usr/bin/env bash
