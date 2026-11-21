@@ -10,6 +10,12 @@
 #     所以接管写出的 resolv.conf 带 options use-vc，getent 靠它走 TCP；
 #     “UDP 通 → 不写 use-vc”那条路沙箱里测不了，只在 S14 用假 dig 单测。
 #   - ss 在 chroot 里依赖 /proc：宿主脚本挂了 proc 之后才看得见真监听。
+# P1 断言分两个阶段（V016-15）：
+#   - 沙箱阶段（本台架默认）：stop marker、agent 状态（systemctl is-active）、
+#     dig +tcp @127.0.0.53 对照、恢复后 15353 端口 dig。这些能成立，见 S0/S11/S13。
+#   - 容器阶段（RIG_CONTAINER_STAGE=1）：dig @127.0.0.53（UDP）真查回包源，
+#     只在 nspawn 真容器里跑（scripts/rig/nspawn-v016-verify.sh），沙箱里
+#     该断言只打印 [SKIP-容器阶段]，不计入 PASS/FAIL，绝不在沙箱硬编通过。
 export PATH=/root/rig/stubs:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/root
 set -u
@@ -61,6 +67,24 @@ getent_example_ok() { getent hosts example.com 2>/dev/null | grep -qE '[0-9]+\.[
 
 port53_free() { /root/rig/bin/bindprobe "" 53; }
 port53_busy() { ! port53_free; }  # V016-13：S14 前置断言用（:53 被 agent 占住）
+agent_active() { systemctl is-active --quiet dnsunlock-agent 2>/dev/null; }
+agent_inactive() { ! systemctl is-active --quiet dnsunlock-agent 2>/dev/null; }
+dig_53_tcp_ok() { dig +tcp +short "@127.0.0.53" "$RULE_DOMAIN" A 2>/dev/null | grep -qx "$RULE_IP"; }
+dig_53_udp_ok() { dig +short "@127.0.0.53" "$RULE_DOMAIN" A 2>/dev/null | grep -qx "$RULE_IP"; }
+dig_rule_ok_port() { dig +tcp -p "$1" +short "@127.0.0.1" "$RULE_DOMAIN" A 2>/dev/null | grep -qx "$RULE_IP"; }
+# V016-15：UDP @127.0.0.53 断言只在容器阶段跑（RIG_CONTAINER_STAGE=1）。
+# 沙箱回环 UDP 本身不通（见文件头），在沙箱里跑它恒失败，与产品无关；
+# 沙箱阶段用等价断言：stop marker、agent 状态、+tcp @127.0.0.53 对照。
+# 容器阶段入口：scripts/rig/nspawn-v016-verify.sh（V016-12 补验）与
+# 真容器里 RIG_CONTAINER_STAGE=1 跑 rig-inner.sh。
+assert_container_only() {
+  local name="$1"; shift
+  if [ "${RIG_CONTAINER_STAGE:-0}" = "1" ]; then
+    assert "$name" "$@"
+  else
+    echo "[SKIP-容器阶段] $name（沙箱 UDP 回环不通，需 nspawn 真容器跑）"
+  fi
+}
 
 stop_agent() {
   if [ -f "$STATE/agent.pid" ]; then
@@ -157,6 +181,10 @@ assert "S0 dig @agent tiktok.com 返回规则 IP" dig_rule_ok
 assert "S0 dig @agent example.com 走上游（非规则 IP）" dig_example_upstream
 assert "S0 基线 getent tiktok.com 不走 agent（走上游）" getent_rule_not
 assert "S0 基线 getent example.com 有结果" getent_example_ok
+# V016-15（P1(b)）：agent 必须在 127.0.0.53 上应答。沙箱阶段只做 TCP 对照
+# （回包源是 UDP 路径的事，沙箱 UDP 回环不通）；UDP 断言是容器阶段的。
+assert "S0 P1(b) TCP 对照：dig +tcp @127.0.0.53 返回规则 IP" dig_53_tcp_ok
+assert_container_only "S0 P1(b) 容器阶段：dig @127.0.0.53（UDP）返回规则 IP" dig_53_udp_ok
 stop_agent
 assert "S0 停 agent 后 :53 已释放（防级联占用）" port53_free
 
@@ -325,6 +353,12 @@ assert "S11 resolv.conf 仍是 127.0.0.1" resolv_is_127
 run_restore "$LOG/s11-restore.log" --yes
 assert "S11 还原后验证通过" file_has "$LOG/s11-restore.log" "已还原并验证通过"
 assert "S11 还原回原文件" files_eq /etc/resolv.conf "$RIG/fixtures/resolv.conf.base"
+# V016-15（P1(a) 指定地址分支）：还原必须先停 agent、再按监听地址起回来。
+# install.sh 本身从不调 stop/start（唯一 stop 在内嵌还原里），marker 可信。
+assert "S11 P1(a) 还原调过 stop dnsunlock-agent" markers_has "stop dnsunlock-agent"
+assert "S11 P1(a) 还原调过 start dnsunlock-agent（指定地址分支恢复）" markers_has "start dnsunlock-agent"
+assert "S11 P1(a) 还原后 agent 已恢复运行" agent_active
+assert "S11 P1(a) 恢复的 agent 在 15353 上答规则 IP" dig_rule_ok_port 15353
 
 echo "=== S12 Tailscale 守卫 ==="
 reset_state
@@ -340,12 +374,22 @@ echo "=== S13 还原 --backup 指定备份 ==="
 reset_state
 run_install "$LOG/s13.log"
 assert "S13 install rc=0" assert_rc0
+# V016-15（P1(a)/(b) 通配符分支）：还原前 agent 必须在跑且在 .53 上应答。
+assert "S13 P1(a) 还原前 agent 在运行" agent_active
+assert "S13 P1(b) TCP 对照：还原前 dig +tcp @127.0.0.53 返回规则 IP" dig_53_tcp_ok
+assert_container_only "S13 P1(b) 容器阶段：还原前 dig @127.0.0.53（UDP）返回规则 IP" dig_53_udp_ok
 B_NEW=$(newest_backup)
 run_restore "$LOG/s13-restore.log" --backup "$B_NEW" --yes
 assert "S13 restore rc=0" assert_rc0
 assert "S13 resolv.conf 等于指定备份的内容" files_eq /etc/resolv.conf "$B_NEW/resolv.conf"
+# V016-15（P1(a)）：还原必须先停 agent；通配符 :53 分支保持停止。
+assert "S13 P1(a) 还原调过 stop dnsunlock-agent" markers_has "stop dnsunlock-agent"
+assert "S13 P1(a) 还原后 agent 已停（通配符分支保持停止）" agent_inactive
+assert "S13 P1(a) 还原后 :53 已释放" port53_free
+assert "S13 P1(a) 还原后 dig +tcp @127.0.0.53 不再应答" expect_fail dig_53_tcp_ok
 run_restore "$LOG/s13-restore2.log" --yes
 assert "S13 默认还原回原文件" files_eq /etc/resolv.conf "$RIG/fixtures/resolv.conf.base"
+assert "S13 P1(a) 二次还原后 agent 仍保持停止" agent_inactive
 
 echo "=== S14 函数级：validate_ipv4 / valid_panel_url / probe / UUID / verify ==="
 # V016-13：S14 自给自足——不再假设 S13 残留的 agent 还在跑。
