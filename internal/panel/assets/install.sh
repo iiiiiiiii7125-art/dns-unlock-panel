@@ -1088,6 +1088,77 @@ meta_value() {
   sed -n "s/^$2=//p" "$1/metadata.txt" 2>/dev/null | head -1
 }
 
+# P1 (v0.1.6)：还原时 systemd-resolved 要重新绑 127.0.0.53:53 的 stub，
+# 但 agent 还占着 :53（通配符绑定）——resolved 绑不上，日志里是
+# "Turning off local DNS stub support"，系统 DNS 随之失效。
+# 所以还原前必须先停 agent；还原后按需恢复，状态写死在输出里，不含糊。
+AGENT_UNIT="dnsunlock-agent"
+AGENT_WAS_ACTIVE=0
+AGENT_WAS_ENABLED=0
+AGENT_LISTEN=""
+
+agent_unit_exists() {
+  systemctl cat "$AGENT_UNIT.service" >/dev/null 2>&1 || \
+    [ -f "/etc/systemd/system/$AGENT_UNIT.service" ] || \
+    [ -f "/usr/lib/systemd/system/$AGENT_UNIT.service" ]
+}
+
+# 还原前记 agent 状态并停掉它。停不掉、或停完 :53 仍被占，就直接退出 1——
+# 此时还没改任何文件（只做了还原前备份），比还原到一半才发现要强。
+record_and_stop_agent() {
+  AGENT_WAS_ACTIVE=0; AGENT_WAS_ENABLED=0; AGENT_LISTEN=""
+  agent_unit_exists || return 0
+  if systemctl is-enabled --quiet "$AGENT_UNIT" 2>/dev/null; then AGENT_WAS_ENABLED=1; fi
+  if systemctl is-active --quiet "$AGENT_UNIT" 2>/dev/null; then AGENT_WAS_ACTIVE=1; fi
+  [ "$AGENT_WAS_ACTIVE" = 1 ] || return 0
+  if [ -f /etc/dnsunlock/config.json ]; then
+    AGENT_LISTEN=$(sed -n 's/.*"dns_listen"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /etc/dnsunlock/config.json | head -1)
+  fi
+  [ -n "$AGENT_LISTEN" ] || AGENT_LISTEN=":53"
+  echo "还原前 agent 在运行（监听 $AGENT_LISTEN），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）..."
+  if ! systemctl stop "$AGENT_UNIT" 2>/dev/null; then
+    echo "错误: 停 dnsunlock-agent 失败，还原已中止（未改任何文件）；请手动 systemctl stop dnsunlock-agent 后重跑" >&2
+    exit 1
+  fi
+  # stop 是同步的，但多等一下确认 :53 真空出来了；ss 不存在就跳过这步。
+  if command -v ss >/dev/null 2>&1; then
+    for _i in 1 2 3 4 5 6 7 8 9 10; do
+      if ! ss -tuln 2>/dev/null | grep -qE ':53[[:space:]]'; then return 0; fi
+      sleep 1
+    done
+    echo "错误: agent 已停，但 :53 仍被占（可能是别的服务），还原已中止（未改任何文件）；请先处理占 :53 的服务后重跑" >&2
+    exit 1
+  fi
+  return 0
+}
+
+# 还原后按需恢复 agent（状态写死，不含糊）。
+# agent 监听 :53（通配符）时起不回来：systemd-resolved 已重新占住
+# 127.0.0.53:53，通配符 :53 绑不上（EADDRINUSE）。这时保持停止并明说，
+# 要再用 agent 分流就重跑安装脚本（安装时会重新关掉 stub 并接管）。
+# 监听是具体地址（127.0.0.1:53、127.0.0.1:5353 等）时不冲突，直接起回来。
+restore_agent_after() {
+  agent_unit_exists || return 0
+  if [ "$AGENT_WAS_ACTIVE" != 1 ]; then
+    echo "agent 还原前未在运行，保持停止（未改动）。"
+    return 0
+  fi
+  case "$AGENT_LISTEN" in
+    :53|0.0.0.0:53|[::]:53)
+      echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：systemd-resolved 已重新占用 :53（stub 127.0.0.53），agent 的通配符 :53 无法同时绑定。"
+      echo "如需继续用 agent 分流，请重新执行安装脚本（它会重新关掉 stub 并接管）；只想恢复系统 DNS 的话，现在已经好了。"
+      ;;
+    *)
+      echo "agent 还原前在运行（监听 $AGENT_LISTEN），正在恢复..."
+      if systemctl start "$AGENT_UNIT" 2>/dev/null && systemctl is-active --quiet "$AGENT_UNIT" 2>/dev/null; then
+        echo "agent 已恢复运行（监听 $AGENT_LISTEN）。"
+      else
+        echo "警告: agent 恢复启动失败（监听 $AGENT_LISTEN），系统 DNS 不受影响；请看 journalctl -u dnsunlock-agent" >&2
+      fi
+      ;;
+  esac
+}
+
 # 还原后验证（getent 优先，走系统解析器；缺 getent 回退 dig；都没工具只报告）。
 # 只报告结果，不决定退出码（文件已还原，验证失败只说明 DNS 可能仍有问题）。
 verify_after_restore() {
@@ -1200,6 +1271,8 @@ reload_backends() {
 restore_from_dir() {
   local dir="$1" link="" target=""
   echo "从备份还原: $dir（$(meta_value "$dir" label)，$(meta_value "$dir" timestamp)）"
+  # P1 (v0.1.6)：先停 agent 再动 resolved，否则 resolved 抢不到 :53 的 stub。
+  record_and_stop_agent
   chattr -i /etc/resolv.conf 2>/dev/null || true
   # 1. 删本次接管写的 NM dns=none 配置（备份里若有同名文件，下面会按备份恢复）。
   rm -f /etc/NetworkManager/conf.d/dnsunlock.conf
@@ -1271,6 +1344,8 @@ restore_from_dir() {
 
 # 老路：无结构化备份目录，只有单份 /etc/dnsunlock/resolv.conf.orig（老版本接管）。
 restore_legacy() {
+  # P1 (v0.1.6)：先停 agent 再动 resolved，否则 resolved 抢不到 :53 的 stub。
+  record_and_stop_agent
   chattr -i /etc/resolv.conf 2>/dev/null || true
   rm -f /etc/systemd/resolved.conf.d/dnsunlock.conf
   systemctl restart systemd-resolved 2>/dev/null || true
@@ -1364,6 +1439,7 @@ if [ -n "$CHOSEN" ]; then
   echo "还原前已自动备份当前状态 -> $PRE_DIR"
   restore_from_dir "$CHOSEN"
   verify_after_restore
+  restore_agent_after
   exit 0
 fi
 
@@ -1377,6 +1453,7 @@ if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   echo "还原前已自动备份当前状态 -> $PRE_DIR"
   restore_legacy
   verify_after_restore
+  restore_agent_after
   exit 0
 fi
 echo "没有找到永久备份（/var/lib/dnsunlock/backup/ 下无备份，也无 /etc/dnsunlock/resolv.conf.orig）。"

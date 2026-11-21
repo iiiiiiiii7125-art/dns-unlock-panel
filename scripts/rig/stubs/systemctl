@@ -29,6 +29,31 @@ case "$1" in
     echo "restart $2" >> /root/rig/logs/markers.log
     exit 0
     ;;
+  stop)
+    # stop <unit>；P1 (v0.1.6) 还原前先停 agent：真杀掉台架里的 agent
+    #（按 PID 文件，和 rig-inner.sh 的 stop_agent 同款），并把状态记停。
+    u="$2"
+    echo "stop $u" >> /root/rig/logs/markers.log
+    if [ "$u" = "dnsunlock-agent" ]; then
+      if [ -f "$STATE/agent.pid" ]; then
+        kill "$(cat "$STATE/agent.pid")" 2>/dev/null || true
+        sleep 1
+        rm -f "$STATE/agent.pid"
+      fi
+      echo "no" > "$STATE/$u.active"
+    fi
+    exit 0
+    ;;
+  start)
+    # start <unit>；P1 (v0.1.6) 还原后按需恢复 agent：走 start-agent 真起。
+    u="$2"
+    echo "start $u" >> /root/rig/logs/markers.log
+    if [ "$u" = "dnsunlock-agent" ]; then
+      echo "yes" > "$STATE/$u.active"
+      /root/rig/stubs/start-agent
+    fi
+    exit 0
+    ;;
   reload)
     echo "reload $2" >> /root/rig/logs/markers.log
     exit 0
@@ -54,7 +79,7 @@ case "$1" in
   status)
     echo "stub: ${2:-} active (running)"; exit 0;;
   cat)
-    case "$2" in systemd-resolved.service|NetworkManager.service) exit 0;; *) exit 1;; esac
+    case "$2" in systemd-resolved.service|NetworkManager.service|dnsunlock-agent.service) exit 0;; *) exit 1;; esac
     ;;
   list-unit-files) exit 0;;
   *) exit 0;;
