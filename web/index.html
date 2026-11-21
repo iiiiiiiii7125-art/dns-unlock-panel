@@ -317,7 +317,9 @@ function renderCats(){
   $('cat').innerHTML='<option value="">全部类别</option>'+cats.map(c=>`<option>${c}</option>`).join('');
   if(cur&&cats.includes(cur))$('cat').value=cur;
 }
-function nodeOptions(sel){return '<option value="">— 选择已有 IP —</option>'+NODES.map(n=>`<option value="${n.id}" ${n.id===sel?'selected':''}>${n.name} · ${n.ip} · ${n.region}</option>`).join('')}
+// v0.1.6 item 3：规则下拉框带节点延迟（复用 refresh 已拉取的 NODES，不另发请求、不轮询）；
+// 无延迟数据（<0 / 缺失）不加后缀。
+function nodeOptions(sel){return '<option value="">— 选择已有 IP —</option>'+NODES.map(n=>{const lat=(typeof n.latency_ms==='number'&&n.latency_ms>=0)?` (${n.latency_ms} ms)`:'';return `<option value="${n.id}" ${n.id===sel?'selected':''}>${n.name} · ${n.ip} · ${n.region}${lat}</option>`}).join('')}
 function regionOptions(sel){return '<option value="">— 地区自动选 —</option>'+REGIONS.map(r=>`<option value="${r.code}" ${r.code===sel?'selected':''}>${r.name}</option>`).join('')}
 function regionName(code){const r=REGIONS.find(x=>x.code===code);return r?r.name:code}
 function setCat(c){$('cat').value=c;onFilter()}
@@ -633,7 +635,7 @@ async function toggleReveal(id){
 function renderNodes(){
   $('nodesBody').innerHTML=NODES.map(n=>`<tr><td>${esc(n.name)}</td><td>${REVEALED[n.id]?esc(REVEALED[n.id]):esc(n.ip)} <button class="ghost" onclick="toggleReveal('${n.id}')">${REVEALED[n.id]?'隐藏':'显示'}</button></td><td>${esc(n.region)}</td>
   <td>${n.status==='online'?'<span class="badge ok">在线</span>':n.status==='offline'?'<span class="badge bad">离线（仅探活失败，不自动改规则）</span>':'<span class="badge dim">未知</span>'}</td>
-  <td>${n.latency_ms>=0?n.latency_ms+' ms':'—'}</td><td>${esc(n.note||'')}</td>
+  <td>${typeof n.latency_ms==='number'&&n.latency_ms>=0?n.latency_ms+' ms':'—'}</td><td>${esc(n.note||'')}</td>
   <td><button class="danger" onclick="delNode('${n.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="7" class="muted">还没有解锁 IP：上方添加任意 IP 即可</td></tr>';
 }
 async function addNode(){
