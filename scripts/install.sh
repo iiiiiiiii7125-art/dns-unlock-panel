@@ -41,15 +41,19 @@ SNI_ALLOW="${SNI_ALLOW:-${DNS_SNI_ALLOWLIST:-}}"
 # 否则 read 会把脚本内容当成答案（token 问答失效、401 就是这么来的）。
 # 用法：ask 变量名 "提示" [silent]；没终端时回落到 stdin（脚本已下载到
 # 文件时 stdin 就是终端；curl | bash 且无终端时读不到，会在下面明确报错）。
+# read 读到 EOF 返回非零；set -e 下会直接静默退出（连 [1/6] 之后发生了什么
+# 都看不到）。这里明确报错退出：无终端 + stdin 关闭时，办法是下载脚本后运行，
+# 或用环境变量/面板生成的命令带齐所需的值。
+no_input() { echo "错误：无法读取输入（stdin 已关闭且无可用终端）。请用面板生成的安装命令（自带 DNS_AGENT_TOKEN），或先把脚本下载下来再执行。" >&2; exit 1; }
 ask() {
   local _var="$1" _prompt="$2" _silent="${3:-}"
   if { : < /dev/tty; } 2>/dev/null; then
     printf '%s' "$_prompt" > /dev/tty
-    if [ "$_silent" = silent ]; then read -rs "$_var" < /dev/tty; echo > /dev/tty
-    else read -r "$_var" < /dev/tty; fi
+    if [ "$_silent" = silent ]; then read -rs "$_var" < /dev/tty || no_input; echo > /dev/tty
+    else read -r "$_var" < /dev/tty || no_input; fi
   else
-    if [ "$_silent" = silent ]; then read -rsp "$_prompt" "$_var"; echo
-    else read -rp "$_prompt" "$_var"; fi
+    if [ "$_silent" = silent ]; then read -rsp "$_prompt" "$_var" || no_input; echo
+    else read -rp "$_prompt" "$_var" || no_input; fi
   fi
 }
 has_tty() { { : < /dev/tty; } 2>/dev/null; }
