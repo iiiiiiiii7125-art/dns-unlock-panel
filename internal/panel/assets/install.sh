@@ -1604,17 +1604,18 @@ restore_agent_after() {
 }
 
 # 还原后验证（getent 优先，走系统解析器；缺 getent 回退 dig；都没工具只报告）。
-# 只报告结果，不决定退出码（文件已还原，验证失败只说明 DNS 可能仍有问题）。
+# 验证失败返回 1（V016-10：以前恒返回 0，stub 已死仍 exit 0，uninstall 会继续删 agent）。
+# 无工具时无法证明失败，返回 0（只报告未做验证）。
 verify_after_restore() {
   if command -v getent >/dev/null 2>&1; then
     if getent hosts example.com >/dev/null 2>&1; then echo "已还原并验证通过（getent hosts example.com 有结果）"; return 0; fi
     echo "已还原但验证未通过（getent hosts example.com 无结果，请检查 DNS 配置）" >&2
-    return 0
+    return 1
   fi
   if command -v dig >/dev/null 2>&1; then
     if dig +short example.com A 2>/dev/null | grep -qE '^[0-9]+\.'; then echo "已还原并验证通过（dig example.com 有结果）"; return 0; fi
     echo "已还原但验证未通过（dig example.com 无结果，请检查 DNS 配置）" >&2
-    return 0
+    return 1
   fi
   echo "已还原（无 getent/dig，验证未做，请手动验证：getent hosts example.com）"
   return 0
@@ -1883,8 +1884,13 @@ if [ -n "$CHOSEN" ]; then
   echo "还原前已自动备份当前状态 -> $PRE_DIR"
   PRE_RESTORE_BACKUP="$PRE_DIR"
   restore_from_dir "$CHOSEN"
-  verify_after_restore
+  VERIFY_RC=0
+  verify_after_restore || VERIFY_RC=$?
   restore_agent_after
+  if [ "$VERIFY_RC" != 0 ]; then
+    echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
+    exit 1
+  fi
   exit 0
 fi
 
@@ -1898,8 +1904,13 @@ if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   echo "还原前已自动备份当前状态 -> $PRE_DIR"
   PRE_RESTORE_BACKUP="$PRE_DIR"
   restore_legacy
-  verify_after_restore
+  VERIFY_RC=0
+  verify_after_restore || VERIFY_RC=$?
   restore_agent_after
+  if [ "$VERIFY_RC" != 0 ]; then
+    echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
+    exit 1
+  fi
   exit 0
 fi
 echo "没有找到永久备份（/var/lib/dnsunlock/backup/ 下无备份，也无 /etc/dnsunlock/resolv.conf.orig）。"
