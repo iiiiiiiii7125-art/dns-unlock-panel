@@ -799,6 +799,21 @@ restore_legacy() {
   echo "已还原 /etc/resolv.conf <- /etc/dnsunlock/resolv.conf.orig"
 }
 
+# clear_temp_state：只清临时状态记录与开机清理 unit，不动 resolv.conf（R2-01）。
+# 还原成功后调用：永久还原取代了临时 DNS，旧记录再留着，下次重启时开机
+# unit 会按记录把 resolv.conf 恢复成临时原状（即接管态 127.0.0.1），等于
+# 撤销还原。绝不能用 cleanup_temp_state 代替——后者会按记录恢复 DNS。
+# 也覆盖 resolvectl 路径的惰性残留（R2-05：只有 state 文件、无开机 unit、
+# 无 DNS 效应，同样清掉）。尽力而为，失败只警告，不致命。
+clear_temp_state() {
+  rm -rf /etc/dnsunlock/temp-state 2>/dev/null || true
+  if [ -f /etc/systemd/system/dnsunlock-temp-restore.service ]; then
+    systemctl disable dnsunlock-temp-restore.service 2>/dev/null || true
+    rm -f /etc/systemd/system/dnsunlock-temp-restore.service
+    systemctl daemon-reload 2>/dev/null || true
+  fi
+}
+
 # cleanup_temp_state：清理 --temp 临时模式留下的运行时 DNS（V016-01）。
 # 按 /etc/dnsunlock/temp-state/state 的记录来：
 #   resolvectl 模式：resolvectl revert <iface>（运行时设置，重启即失效，不动文件）；
@@ -954,6 +969,10 @@ if [ -n "$CHOSEN" ]; then
   VERIFY_RC=0
   verify_after_restore || VERIFY_RC=$?
   restore_agent_after
+  # R2-01：还原已完成（无论验证过不过），清临时状态：残留的开机 unit 会在
+  # 下次重启把 resolv.conf 改回接管态。只在还原成功路径调，中止路径不调
+  # （中止时 DNS 未改，临时状态仍有效）。
+  clear_temp_state
   if [ "$VERIFY_RC" != 0 ]; then
     echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
     exit 1
@@ -974,6 +993,8 @@ if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   VERIFY_RC=0
   verify_after_restore || VERIFY_RC=$?
   restore_agent_after
+  # R2-01：同上，还原已完成即清临时状态（中止路径不调）。
+  clear_temp_state
   if [ "$VERIFY_RC" != 0 ]; then
     echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
     exit 1
