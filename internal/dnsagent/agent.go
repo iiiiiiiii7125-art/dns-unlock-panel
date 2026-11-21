@@ -10,6 +10,7 @@ package dnsagent
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -97,7 +99,12 @@ type Agent struct {
 	overrideMu    sync.Mutex
 	eventsMu      sync.Mutex
 	pendingEvents []model.FailoverEvent
-	client        *http.Client
+	// panel fallback (v0.1.3): candidate panel endpoints, built once
+	// from the configured panel URL; last-known-good is tried first.
+	// In-memory only — nothing new is persisted to disk.
+	panelMu         sync.Mutex
+	panelCandidates []string
+	panelLastGood   string
 }
 
 type cacheEntry struct {
@@ -139,8 +146,8 @@ func New(cfg Config) *Agent {
 		upstream: cfg.Upstream, upstreams: []string{cfg.Upstream, "8.8.8.8"}, perPlat: map[string]int64{},
 		health: map[string]*nodeHealth{}, rules: map[string]model.AgentRule{},
 		override: map[string]string{}, allowIPs: map[string]bool{},
-		client: &http.Client{Timeout: 10 * time.Second},
-		cache:  map[string]cacheEntry{}, lastFetch: time.Now(), lastFetchOK: true,
+		panelCandidates: panelCandidates(cfg.PanelURL),
+		cache:           map[string]cacheEntry{}, lastFetch: time.Now(), lastFetchOK: true,
 		sem: make(chan struct{}, 256),
 	}
 	// Deduplicate upstreams.
@@ -219,17 +226,101 @@ func (a *Agent) lookup(name string) (target, bool) {
 	}
 }
 
+// panelCandidates builds the ordered fallback list from the configured
+// panel URL: (a) the configured URL itself, (b) plain http on the same
+// host :8080 (the panel always listens on :8080 directly; 443 is only
+// Caddy's reverse proxy), (c) http on each resolved IP of the host
+// :8080. Nothing here weakens the allowlist or adds a port/relay.
+// Resolution happens once at startup; a failure just drops (c).
+func panelCandidates(rawurl string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(u string) {
+		u = strings.TrimSuffix(u, "/")
+		if u != "" && !seen[u] {
+			seen[u] = true
+			out = append(out, u)
+		}
+	}
+	add(rawurl)
+	u, err := url.Parse(rawurl)
+	if err != nil || u.Host == "" {
+		return out
+	}
+	host := u.Hostname()
+	if host == "" {
+		return out
+	}
+	// (b) same host, plain http :8080.
+	if !(u.Scheme == "http" && u.Port() == "8080") {
+		add("http://" + net.JoinHostPort(host, "8080"))
+	}
+	// (c) resolved IPs :8080.
+	if net.ParseIP(host) == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if ips, err := net.DefaultResolver.LookupHost(ctx, host); err == nil {
+			for _, ip := range ips {
+				add("http://" + net.JoinHostPort(ip, "8080"))
+			}
+		}
+	}
+	return out
+}
+
+// panelDo sends one panel request, trying the last-known-good endpoint
+// first, then the rest in order. Each attempt is bounded (~5s) so a
+// blackholed 443 fails fast instead of hanging a poll cycle. Any HTTP
+// response counts as reachable; the caller checks the status code.
+func (a *Agent) panelDo(newReq func(base string) (*http.Request, error)) (*http.Response, error) {
+	a.panelMu.Lock()
+	order := append([]string{}, a.panelCandidates...)
+	if a.panelLastGood != "" {
+		front := []string{a.panelLastGood}
+		for _, c := range order {
+			if c != a.panelLastGood {
+				front = append(front, c)
+			}
+		}
+		order = front
+	}
+	a.panelMu.Unlock()
+	short := &http.Client{Timeout: 5 * time.Second}
+	var lastErr error
+	for _, base := range order {
+		req, err := newReq(base)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := short.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		a.panelMu.Lock()
+		a.panelLastGood = base
+		a.panelMu.Unlock()
+		return resp, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no panel endpoints configured")
+	}
+	return nil, lastErr
+}
+
 func (a *Agent) fetchConfig() error {
 	// Token goes in the header, never in the URL (URLs land in access
 	// logs). The panel's agentAuth accepts X-Agent-Token (P0-06).
-	u := fmt.Sprintf("%s/api/v1/agent/config?server_id=%s",
-		strings.TrimSuffix(a.cfg.PanelURL, "/"), a.cfg.ServerID)
-	req, err := http.NewRequest(http.MethodGet, u, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("X-Agent-Token", a.cfg.Token)
-	resp, err := a.client.Do(req)
+	resp, err := a.panelDo(func(base string) (*http.Request, error) {
+		u := fmt.Sprintf("%s/api/v1/agent/config?server_id=%s",
+			strings.TrimSuffix(base, "/"), a.cfg.ServerID)
+		req, err := http.NewRequest(http.MethodGet, u, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("X-Agent-Token", a.cfg.Token)
+		return req, nil
+	})
 	if err != nil {
 		return err
 	}
@@ -477,15 +568,16 @@ func (a *Agent) sendHeartbeat() {
 		Counters: model.AgentCounters{Total: a.total.Load(), Rewritten: a.rewritten.Load(), Forwarded: a.forwarded.Load(), PerPlatform: perPlat},
 	}
 	b, _ := json.Marshal(hb)
-	u := fmt.Sprintf("%s/api/v1/agent/heartbeat?server_id=%s", strings.TrimSuffix(a.cfg.PanelURL, "/"), a.cfg.ServerID)
-	hbReq, err := http.NewRequest(http.MethodPost, u, bytes.NewReader(b))
-	if err != nil {
-		fmt.Printf("[agent] heartbeat failed: %v\n", err)
-		return
-	}
-	hbReq.Header.Set("Content-Type", "application/json")
-	hbReq.Header.Set("X-Agent-Token", a.cfg.Token)
-	resp, err := a.client.Do(hbReq)
+	resp, err := a.panelDo(func(base string) (*http.Request, error) {
+		u := fmt.Sprintf("%s/api/v1/agent/heartbeat?server_id=%s", strings.TrimSuffix(base, "/"), a.cfg.ServerID)
+		hbReq, err := http.NewRequest(http.MethodPost, u, bytes.NewReader(b))
+		if err != nil {
+			return nil, err
+		}
+		hbReq.Header.Set("Content-Type", "application/json")
+		hbReq.Header.Set("X-Agent-Token", a.cfg.Token)
+		return hbReq, nil
+	})
 	if err != nil {
 		fmt.Printf("[agent] heartbeat failed: %v\n", err)
 		return

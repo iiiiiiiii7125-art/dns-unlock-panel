@@ -14,6 +14,8 @@
 # 注意：用环境变量带 token 时，token 会进目标机器的 shell 历史；介意的话
 # 就不带变量，装时按提示输入（不回显）。token 只写进 600 配置文件，不进
 # 启动命令 / 日志；泄露了就去面板删了这台服务器重新登记，token 会换新的。
+# v0.1.3：安装时先探面板：443 不通自动改走同主机 :8080（每步最多 8 秒，
+# 不会像原来那样卡 134 秒）；agent 运行时也一样逐个试，规则照常同步。
 set -euo pipefail
 
 PANEL_URL="__PANEL_URL__"
@@ -119,6 +121,7 @@ while [ $# -gt 0 ]; do
     --dns-listen) DNS_LISTEN="$2"; shift 2;;
     --help|-h)
       echo "用法: bash install.sh [--panel URL] [--dns-listen ADDR] [--allowlist IPS] [--unlock-node]"
+      echo "  --panel URL         面板地址（默认已 baked；443 不通时自动改走同主机 :8080，也可直接指定内网地址）"
       echo "  --dns-listen ADDR   DNS 监听地址，默认 :53；如 127.0.0.1:5353（也可设 DNS_LISTEN 环境变量）"
       echo "  --allowlist IPS     允许使用本 DNS 的客户端 IP/CIDR，逗号分隔（必填）"
       echo "  --unlock-node       只装 SNI 解锁节点，不装 DNS 分流服务"
@@ -207,6 +210,57 @@ ask_yes_no() {
   case "$ans" in y|Y) return 0;; *) return 1;; esac
 }
 
+# v0.1.3 容错：面板 443 被挡时不要硬等 134 秒。候选顺序：
+# (a) 配置的 PANEL_URL 本身，(b) 同一主机 http :8080（面板本身一直监听
+# :8080，443 只是 Caddy 的反代），(c) 同一主机解析出的 IP :8080。
+# 每个候选只探一次（--max-time 8）；任何 HTTP 响应都算通（没 token 的
+# whoami 回 401 也算，说明到面板了）。成功时 stdout 只输出选中的地址，
+# 诊断打到 stderr。都不通返回 1。
+probe_panel() {
+  local base="$1" scheme rest hostport host port ip
+  local cands=() uniq=() cand code u seen
+  scheme="${base%%://*}"; rest="${base#*://}"; hostport="${rest%%/*}"
+  case "$hostport" in
+    \[*\]* ) host="${hostport#[}"; host="${host%]*}" ;;
+    * ) host="${hostport%%:*}" ;;
+  esac
+  port="${hostport##*:}"
+  case "$port" in ''|*[!0-9]* ) port="" ;; esac
+  cands+=("$base")
+  # (b) 同主机 :8080（本身就是 http :8080 时跳过）
+  if [ "$scheme" = "https" ] || [ "$port" != "8080" ]; then
+    case "$host" in
+      *:* ) cands+=("http://[$host]:8080") ;;
+      * ) cands+=("http://$host:8080") ;;
+    esac
+  fi
+  # (c) 解析出的 IP :8080（host 已是 IP 时 getent 原样返回，去重会去掉）
+  if [ -n "$host" ]; then
+    for ip in $(getent hosts "$host" 2>/dev/null | awk '{print $1}' | sort -u); do
+      case "$ip" in
+        *:* ) cands+=("http://[$ip]:8080") ;;
+        * ) cands+=("http://$ip:8080") ;;
+      esac
+    done
+  fi
+  for cand in "${cands[@]}"; do
+    seen=0
+    for u in "${uniq[@]}"; do [ "$u" = "$cand" ] && seen=1; done
+    [ "$seen" = 0 ] && uniq+=("$cand")
+  done
+  for cand in "${uniq[@]}"; do
+    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 "$cand/api/v1/agent/whoami" 2>/dev/null || true)
+    if [ -n "$code" ] && [ "$code" != "000" ]; then
+      echo "$cand"
+      return 0
+    fi
+    echo "  探测 $cand -> 不通（HTTP ${code:-000}）" >&2
+  done
+  echo "面板都连不上，试过：${uniq[*]}" >&2
+  echo "请检查面板是否在运行；如果 443 被挡，可用 --panel 指定面板机的内网地址，如：bash install.sh --panel http://<面板机内网IP>:8080" >&2
+  return 1
+}
+
 # P1-10: 先检查 systemd / 端口，再动手；没有 systemd 的机器直接停下，不留半截服务。
 if [ "$MODE" = "dns" ]; then
   command -v systemctl >/dev/null || { echo "需要 systemd（systemctl 不存在），本脚本不支持 OpenRC/SysVInit，请手动按 README 部署"; exit 1; }
@@ -254,6 +308,14 @@ if [ -z "${TOKEN:-}" ]; then
   exit 1
 fi
 
+# v0.1.3: 先探面板，443 被挡时自动改走 :8080（每步最多等 8 秒，不会卡 134 秒）。
+# PANEL_URL 是登记的规范地址（写进配置文件，agent 运行时自己也会逐个试）；
+# PANEL_BASE 是本次安装实际用的地址。
+PANEL_BASE="$(probe_panel "$PANEL_URL")" || exit 1
+if [ "$PANEL_BASE" != "$PANEL_URL" ]; then
+  echo "面板 443 不通，已自动改走 $PANEL_BASE（面板直连 :8080）。"
+fi
+
 # M-02: token 不进命令行：写进 0600 的 curl 配置文件，curl -K 读它。
 # 旧写法（curl -H 后直接跟 token）会把 token 写进进程列表（ps 可见）。
 # 配置文件路径进 ps 不打紧，token 本身不出现；脚本退出时删掉（token 是
@@ -265,7 +327,7 @@ trap 'rm -f "$AUTH_CFG" /tmp/dnsunlock-whoami.json' EXIT
 
 # 0. 装前基线测试（P1-11，照 AKDNS 的做法）：面板通不通、token 对不对、解锁 IP 通不通。
 echo "[0/6] 装前检查：面板连通性 + token..."
-if ! curl -fsSL -K "$AUTH_CFG" "$PANEL_URL/api/v1/agent/whoami" -o /tmp/dnsunlock-whoami.json; then
+if ! curl -fsSL -K "$AUTH_CFG" "$PANEL_BASE/api/v1/agent/whoami" -o /tmp/dnsunlock-whoami.json; then
   echo "面板连不上或 agent token 不对：请检查面板地址和 token（token 是每台服务器单独的那串，不是 admin 密码）。"
   exit 1
 fi
@@ -285,8 +347,8 @@ echo "[1/6] 下载 $BIN ..."
 # 目录里没有 $BIN，校验永远失败。校验通过后再装到最终位置。
 DL_TMP="$(mktemp -d)"
 trap 'rm -f "$AUTH_CFG" /tmp/dnsunlock-whoami.json; rm -rf "$DL_TMP"' EXIT
-curl -fsSL -K "$AUTH_CFG" "$PANEL_URL/dl/$BIN" -o "$DL_TMP/$BIN" || { echo "下载失败：检查面板地址 / token / Release 是否已发"; exit 1; }
-curl -fsSL "$PANEL_URL/dl/$BIN.sha256" -o "$DL_TMP/$BIN.sha256" || { echo "sha256 文件下载失败：为安全起见停止安装，不跳过校验"; exit 1; }
+curl -fsSL -K "$AUTH_CFG" "$PANEL_BASE/dl/$BIN" -o "$DL_TMP/$BIN" || { echo "下载失败：检查面板地址 / token / Release 是否已发"; exit 1; }
+curl -fsSL "$PANEL_BASE/dl/$BIN.sha256" -o "$DL_TMP/$BIN.sha256" || { echo "sha256 文件下载失败：为安全起见停止安装，不跳过校验"; exit 1; }
 (cd "$DL_TMP" && sha256sum -c "$BIN.sha256") || { echo "sha256 校验失败：二进制可能被篡改，停止安装"; exit 1; }
 echo "sha256 校验通过"
 install -m 0755 "$DL_TMP/$BIN" /usr/local/bin/dnsunlock
@@ -543,6 +605,7 @@ chmod +x /usr/local/bin/dnsunlock-restore-dns
 echo
 echo "=== 安装完成 ==="
 echo "面板: $PANEL_URL  (分流规则改动后约 5 秒生效)"
+[ "$PANEL_BASE" != "$PANEL_URL" ] && echo "本次安装实际走的是 $PANEL_BASE（443 不通自动走 :8080）；agent 配置里仍记 $PANEL_URL，运行时会自动试两个地址。"
 echo "DNS 监听: $DNS_LISTEN"
 echo "测试: dig @$_dl_host -p $_dl_port netflix.com A    # 应返回规则里配的解锁 IP"
 echo "      dig @$_dl_host -p $_dl_port example.com A    # 应返回真实上游 IP"

@@ -110,6 +110,7 @@ input[type=checkbox]{width:auto}
     <p class="muted" id="srvToken" style="color:#166534"></p>
     <p><code id="srvInstallCmd"></code> <button class="ghost" id="srvInstallCopyBtn" onclick="copySrvInstall()" style="display:none">复制安装命令</button></p>
     <p class="muted">安装命令里带有 token，执行后会进目标机器的 shell 历史；token 泄露了就删了这台服务器重新登记，会换新的。</p>
+    <p class="muted">安装脚本会在面板 443 不通时自动改走面板的 :8080（每步最多等 8 秒），无需手动处理。</p>
     <table><thead><tr><th>名称</th><th>IP</th><th>默认解锁 IP</th><th>状态</th><th>最后在线</th><th>配置版本</th><th>server_id / agent token（装机用）</th><th></th></tr></thead><tbody id="serversBody"></tbody></table>
     <h3>可选：把自己的 VPS 变成解锁节点（SNI 代理）</h3>
     <p class="muted">面板和 DNS 分流本身不需要这一步。只有当你想让某台自己的 VPS 亲自做解锁出口时，才在那台机器上执行：<br><code id="unlockCmd"></code> <button class="ghost" onclick="copyUnlock()">复制</button></p>
