@@ -1,0 +1,32 @@
+worktree: /home/hatch/workspace/dns-unlock-panel-v016r2-shell
+PASS: bash -n install.sh
+PASS: 提取的新版 probe_panel bash -n 通过
+PASS: 提取的旧版 probe_panel bash -n 通过
+impostor up (404 expected, rc ignored)
+--- case A base=http://127.0.0.1:18081 rc=0 ---
+stdout: http://127.0.0.1:18081
+  探测 http://127.0.0.1:8080 -> 不是面板（HTTP 404，whoami 响应形态不符）
+  面板入口测速排名（并行探测，8 秒超时，最快在前）：
+PASS: A rc=0
+PASS: A 选中真面板 :18081
+PASS: A :8080 被判不是面板
+--- case B base=http://127.0.0.1:18082 rc=0 ---
+stdout: http://127.0.0.1:18082
+  探测 http://127.0.0.1:8080 -> 不是面板（HTTP 404，whoami 响应形态不符）
+  面板入口测速排名（并行探测，8 秒超时，最快在前）：
+PASS: B rc=0
+PASS: B 选中真面板 :18082（200 + server_id）
+PASS: B :8080 被判不是面板
+--- case C base=http://127.0.0.1:18080 rc=1 ---
+stdout: 
+  探测 http://127.0.0.1:18080 -> 不通（HTTP 000）
+  探测 http://127.0.0.1:8080 -> 不是面板（HTTP 404，whoami 响应形态不符）
+面板都连不上，试过：http://127.0.0.1:18080 http://127.0.0.1:8080
+PASS: C rc=1（只有冒名者，不通）
+PASS: C 输出为空（未选中任何入口）
+PASS: C 报面板都连不上
+--- case D base=http://127.0.0.1:18081 rc=0 ---
+stdout: http://127.0.0.1:8080
+  面板入口测速排名（并行探测，8 秒超时，最快在前）：
+PASS: D（红证）旧版选中冒名者 :8080
+=== R2-13: PASS=13 FAIL=0 ===

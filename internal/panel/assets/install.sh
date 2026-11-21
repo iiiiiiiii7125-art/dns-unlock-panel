@@ -718,9 +718,12 @@ apply_temp_dns() {
 # (a) 配置的 PANEL_URL 本身，(b) 同一主机 http :8080（面板本身一直监听
 # :8080，443 只是 Caddy 的反代），(c) 同一主机解析出的 IP :8080。
 # v0.1.6 V016-04：全部候选并行探测（curl 计时，--max-time 8），按延迟
-# 排序选最快且可达的，不再是“第一个通的就赢”。任何 HTTP 响应都算通
-# （没 token 的 whoami 回 401 也算，说明到面板了）。成功时 stdout 只
-# 输出选中的地址，诊断打到 stderr。都不通返回 1。
+# 排序选最快且可达的，不再是“第一个通的就赢”。R2-13：只认形态对的响应——
+# whoami 的合法回答只有两种：401 + JSON 含 "agent token"（无 token 时真
+# 面板的回答），或 200 + JSON 含 "server_id"。以前任何非 000 的 HTTP
+# 响应都算通，并行测速下本机冒名者（~1ms）几乎每次赢过真面板，token
+# 会发给冒名者。成功时 stdout 只输出选中的地址，诊断打到 stderr。
+# 都不通返回 1。
 probe_panel() {
   local base="$1" scheme rest hostport host port ip
   local cands=() uniq=() cand code u seen
@@ -764,16 +767,30 @@ probe_panel() {
   tmpdir="$(mktemp -d /tmp/dnsunlock-probe.XXXXXX)"
   local i=0
   for cand in "${uniq[@]}"; do
-    ( out="$(curl -s -o /dev/null -w "%{http_code} %{time_total}" --max-time 8 "$cand/api/v1/agent/whoami" 2>/dev/null)" && printf '%s\n' "$out" > "$tmpdir/$i" || echo "000 0" > "$tmpdir/$i" ) &
+    # R2-13：响应体存下来供形态校验（见下）。-w 输出经命令替换再 printf
+    # 写盘（自带换行符，read 才能读到；直接重定向的话 -w 输出无尾换行，
+    # read 会因 EOF 返回 1 而误判不通）。curl 失败时走 else 写 "000 0"。
+    ( if out="$(curl -s -o "$tmpdir/$i.body" -w "%{http_code} %{time_total}" --max-time 8 "$cand/api/v1/agent/whoami" 2>/dev/null)"; then printf '%s\n' "$out" > "$tmpdir/$i"; else echo "000 0" > "$tmpdir/$i"; fi ) &
     i=$((i+1))
   done
   wait || true
-  local results=() ms code tsec
+  local results=() ms code tsec _shape_ok
   i=0
   for cand in "${uniq[@]}"; do
     if read -r code tsec < "$tmpdir/$i" 2>/dev/null && [ -n "$code" ] && [ "$code" != "000" ]; then
-      ms="$(awk -v t="$tsec" 'BEGIN{printf "%.0f", t*1000}')"
-      results+=("$ms"$'\t'"$cand"$'\t'"$code")
+      # R2-13：校验 whoami 响应形态——401 须含 agent token，200 须含
+      # server_id；其余一律不算面板（冒名者常回 404 + HTML）。
+      _shape_ok=0
+      case "$code" in
+        401) grep -q 'agent token' "$tmpdir/$i.body" 2>/dev/null && _shape_ok=1 ;;
+        200) grep -q 'server_id' "$tmpdir/$i.body" 2>/dev/null && _shape_ok=1 ;;
+      esac
+      if [ "$_shape_ok" = 1 ]; then
+        ms="$(awk -v t="$tsec" 'BEGIN{printf "%.0f", t*1000}')"
+        results+=("$ms"$'\t'"$cand"$'\t'"$code")
+      else
+        echo "  探测 $cand -> 不是面板（HTTP $code，whoami 响应形态不符）" >&2
+      fi
     else
       echo "  探测 $cand -> 不通（HTTP ${code:-000}）" >&2
     fi
