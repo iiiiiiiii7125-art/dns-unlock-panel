@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -159,6 +160,77 @@ func TestSelftestRoundTrip(t *testing.T) {
 	if runs2 != 1 {
 		t.Fatalf("selftest runs = %d want 1 (duplicate delivery must not re-run)", runs2)
 	}
+}
+
+// blackholeListener accepts TCP connections and never speaks: a TLS
+// handshake against it eats the full 5s probe deadline per rule —
+// the C-02 "14 rules, all dead" shape, shrunk to 4 rules.
+func blackholeListener(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				time.Sleep(30 * time.Second)
+				c.Close()
+			}()
+		}
+	}()
+	return ln.Addr().(*net.TCPAddr).Port
+}
+
+// TestSelftestProbesInParallel (V016-17, Go part): probing 4 blackholed
+// rules must take ~5s (one probe deadline), not ~20s (4 serial
+// deadlines). Serial probes are what pushed the 14-rule all-dead
+// self-test past the UI's 90s window (C-02: 14x5s = 70s of probing
+// alone, plus fetch + heartbeat phase).
+func TestSelftestProbesInParallel(t *testing.T) {
+	port := blackholeListener(t)
+	oldPort := probePort
+	probePort = strconv.Itoa(port)
+	t.Cleanup(func() { probePort = oldPort })
+
+	a := New(Config{PanelURL: "http://127.0.0.1:8080", Token: "t", ServerID: "srv-1"})
+	a.rulesMu.Lock()
+	a.rules = map[string]model.AgentRule{}
+	for i := 0; i < 4; i++ {
+		id := fmt.Sprintf("plat-%d", i)
+		a.rules[id] = model.AgentRule{PlatformID: id, Domains: []string{id + ".example.com"}, NodeIP: "127.0.0.1"}
+	}
+	a.rulesMu.Unlock()
+	a.mu.Lock()
+	a.rebuildDomainsLocked(a.rules)
+	a.mu.Unlock()
+
+	start := time.Now()
+	a.runSelftest(model.SelftestRequest{ID: "st-parallel", RequestedAt: time.Now().UTC().Format(time.RFC3339)})
+	elapsed := time.Since(start)
+	a.selftestMu.Lock()
+	res := a.selftestResult
+	a.selftestMu.Unlock()
+	if res == nil || len(res.Results) != 4 {
+		t.Fatalf("result = %+v want 4 rows", res)
+	}
+	for i, row := range res.Results {
+		if row.PlatformID != fmt.Sprintf("plat-%d", i) {
+			t.Fatalf("row %d = %+v want plat-%d first (results stay sorted by platform)", i, row, i)
+		}
+		if row.OK || row.Error == "" {
+			t.Fatalf("row %d = %+v want FAIL (blackholed probe)", i, row)
+		}
+	}
+	if elapsed > 12*time.Second {
+		t.Fatalf("selftest with 4 blackholed rules took %s (serial probes); want < 12s via parallel probes", elapsed.Round(time.Millisecond))
+	}
+	t.Logf("4 blackholed rules self-tested in %s", elapsed.Round(time.Millisecond))
 }
 
 // A rule whose unlock IP has no TLS listener fails the row (not a crash)

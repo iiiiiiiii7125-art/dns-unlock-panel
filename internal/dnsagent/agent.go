@@ -476,27 +476,47 @@ func (a *Agent) runSelftest(req model.SelftestRequest) {
 		RequestID: req.ID, RanAt: time.Now().UTC().Format(time.RFC3339),
 		Results: []model.SelftestResultItem{},
 	}
+	// V016-17: probe in parallel, bounded (16 at a time). Serial
+	// probes are what pushed the all-dead self-test past the UI's 90s
+	// window: one blackholed node eats the full 5s TLS deadline, so
+	// 14 rules cost ~70s of probing alone before the heartbeat phase.
+	// Results are collected by index, so the output stays sorted by
+	// platform exactly as before; last_selftest's shape is unchanged.
+	tested := make([]model.AgentRule, 0, len(rules))
 	for _, r := range rules {
 		if len(r.Domains) == 0 {
 			continue
 		}
-		domain := r.Domains[0]
-		item := model.SelftestResultItem{PlatformID: r.PlatformID, Domain: domain, LatencyMs: -1}
-		ip, err := a.resolveForSelftest(r, domain)
-		if err != nil {
-			item.Error = err.Error()
-			res.Results = append(res.Results, item)
-			continue
-		}
-		item.ResolvedIP = ip
-		lat, ok := a.probeIP(ip, domain)
-		item.LatencyMs = lat
-		item.OK = ok
-		if !ok {
-			item.Error = "TCP :" + probePort + " 连接或 TLS 握手失败"
-		}
-		res.Results = append(res.Results, item)
+		tested = append(tested, r)
 	}
+	items := make([]model.SelftestResultItem, len(tested))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 16)
+	for i, r := range tested {
+		wg.Add(1)
+		go func(i int, r model.AgentRule) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			domain := r.Domains[0]
+			item := model.SelftestResultItem{PlatformID: r.PlatformID, Domain: domain, LatencyMs: -1}
+			ip, err := a.resolveForSelftest(r, domain)
+			if err != nil {
+				item.Error = err.Error()
+			} else {
+				item.ResolvedIP = ip
+				lat, ok := a.probeIP(ip, domain)
+				item.LatencyMs = lat
+				item.OK = ok
+				if !ok {
+					item.Error = "TCP :" + probePort + " 连接或 TLS 握手失败"
+				}
+			}
+			items[i] = item
+		}(i, r)
+	}
+	wg.Wait()
+	res.Results = items
 	a.selftestMu.Lock()
 	a.selftestResult = res
 	a.selftestMu.Unlock()
