@@ -266,12 +266,42 @@ verify_system_dns() {
 # 规则取自面板 /api/v1/agent/config 的第一条 address 模式规则（domains[0] + node_ip）；
 # 无规则、取不到、或规则是 nameserver 模式（答案不改写）时跳过，只提示手动核对。
 # 失败只警告，不致命（规则 IP 也可能因故障切换而变化）。
+# 解析必须按 rules 数组取第一条 mode=address 且 node_ip 非空的规则
+# （nameserver 规则 mode="nameserver" 且 node_ip 为空；address 规则 mode 为空
+# 或 "address"）。绝不能用贪婪 sed 在整个文件上取最后一次出现（V016-06）：
+# python3 优先（严格解析 JSON），其次 jq，最后用 grep 按字段顺序配对
+# （每条规则恰好一个 domains 数组与一个 node_ip 字段，文档顺序一一对应）。
 verify_rule_domain() {
-  local cfg domain="" node_ip="" out=""
+  local cfg domain="" node_ip="" out="" _vrd=""
   cfg="$(mktemp /tmp/dnsunlock-agent-config.XXXXXX)" || { echo "  规则域名验证跳过: 建临时文件失败（稍后手动验证规则域名）"; return 2; }
   curl -fsSL -K "$AUTH_CFG" --max-time 8 "$PANEL_BASE/api/v1/agent/config?server_id=$SERVER_ID" -o "$cfg" 2>/dev/null || { rm -f "$cfg"; echo "  规则域名验证跳过: 拉不到 agent 配置（稍后手动验证规则域名）"; return 2; }
-  domain=$(sed -n 's/.*"domains":\["\([^"]*\)".*/\1/p' "$cfg" | head -1)
-  node_ip=$(sed -n 's/.*"node_ip":"\([^"]*\)".*/\1/p' "$cfg" | head -1)
+  if command -v python3 >/dev/null 2>&1; then
+    _vrd=$(python3 - "$cfg" <<'PYEOF' 2>/dev/null
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+for r in data.get("rules") or []:
+    mode = r.get("mode") or "address"
+    ip = r.get("node_ip") or ""
+    doms = r.get("domains") or []
+    if mode == "address" and ip and doms:
+        print(doms[0] + "\t" + ip)
+        sys.exit(0)
+sys.exit(2)
+PYEOF
+)
+    if [ -n "$_vrd" ]; then domain="${_vrd%%$'\t'*}"; node_ip="${_vrd#*$'\t'}"; fi
+  fi
+  if [ -z "$domain" ] && command -v jq >/dev/null 2>&1; then
+    _vrd=$(jq -r '.rules[] | select((.mode // "address") == "address" and (.node_ip // "") != "" and (.domains | length) > 0) | (.domains[0] + "\t" + .node_ip)' "$cfg" 2>/dev/null | head -1)
+    if [ -n "$_vrd" ]; then domain="${_vrd%%$'\t'*}"; node_ip="${_vrd#*$'\t'}"; fi
+  fi
+  if [ -z "$domain" ]; then
+    _vrd=$(paste <(grep -oE '"domains":\["[^"]*"' "$cfg" 2>/dev/null | sed 's/.*"domains":\["//; s/"$//') <(grep -oE '"node_ip":"[^"]*"' "$cfg" 2>/dev/null | sed 's/.*"node_ip":"//; s/"$//') 2>/dev/null | awk -F'\t' '$2 != "" {print $1 "\t" $2; exit}')
+    if [ -n "$_vrd" ]; then domain="${_vrd%%$'\t'*}"; node_ip="${_vrd#*$'\t'}"; fi
+  fi
   rm -f "$cfg"
   if [ -z "$domain" ] || [ -z "$node_ip" ]; then
     echo "  规则域名验证跳过: 当前没有 address 模式的规则（未设规则时属正常）"
