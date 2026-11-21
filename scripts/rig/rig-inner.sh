@@ -170,6 +170,8 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$LOG" "$STATE" /etc/dnsunlock /var/lib/dnsunlock/backup
+# G-1：基线 commit 戳（外层脚本 / nspawn 同步写入 $RIG/baseline-commit.txt）。
+if [ -f "$RIG/baseline-commit.txt" ]; then echo "台架基线 commit: $(cat "$RIG/baseline-commit.txt")"; fi
 reset_backups; reset_state
 
 echo "=== S0 基线：agent 直连 DNS ==="

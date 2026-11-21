@@ -69,6 +69,19 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# 证据 hygiene（G-1/G-2）：外层 stdout 经 tee 进证据日志（带基线 commit 戳），
+# 退出时把逐场景日志（chroot 内 /root/rig/logs/* + 面板日志）一并归档进同名
+# -scenarios 目录，不再只有外层 stdout。
+STAMP=$(date -u +%Y%m%d-%H%MZ)
+EVIDENCE_DIR="$PWD/audit/evidence-v016r2-fix"
+RIG_LOG="$EVIDENCE_DIR/rig-$STAMP.log"
+SCEN_DIR="$EVIDENCE_DIR/rig-$STAMP-scenarios"
+mkdir -p "$EVIDENCE_DIR"
+exec > >(tee -a "$RIG_LOG") 2>&1
+echo "台架证据日志：$RIG_LOG（逐场景日志见 $SCEN_DIR）"
+BASELINE_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown（非 git 检出）")
+echo "台架基线 commit: $BASELINE_COMMIT"
+
 ROOT=/var/lib/machines/v016-test
 RIG=$ROOT/root/rig
 # 面板端口：沙箱是多 lane 共用的，18080 已被 v0.1.5 验证的 panel 占着，
@@ -86,8 +99,17 @@ KEEP=0
 [ "${1:-}" = "--keep" ] && KEEP=1
 
 PANEL_PID=""
+archive_rig_logs() {
+  # G-2：逐场景日志归档。$RIG 在下次跑的 rm -rf 里会被清掉，所以必须在本次
+  # 退出时拷出来；只剩外层 stdout 的话，S9b 走 rc=0 还是 rc=1 兜底事后查不到。
+  mkdir -p "$SCEN_DIR"
+  if [ -d "$RIG/logs" ]; then cp -a "$RIG/logs/." "$SCEN_DIR/" 2>/dev/null || true; fi
+  [ -f "$PANEL_DIR/panel.log" ] && cp -a "$PANEL_DIR/panel.log" "$SCEN_DIR/panel.log" 2>/dev/null || true
+  echo "逐场景日志已归档：$SCEN_DIR（$(ls "$SCEN_DIR" 2>/dev/null | wc -l) 个文件）"
+}
 cleanup_panel() {
   if [ "$KEEP" != 1 ] && [ -n "$PANEL_PID" ]; then kill "$PANEL_PID" 2>/dev/null || true; fi
+  archive_rig_logs
 }
 trap cleanup_panel EXIT
 
@@ -208,6 +230,7 @@ echo "panel 就绪：server=$SERVER_ID node=$NODE_ID 规则 tiktok -> 203.0.113.
 echo "== 准备台架文件（$RIG）=="
 rm -rf "$RIG"
 mkdir -p "$RIG"/{stubs,state,logs,bin,fixtures}
+printf '%s\n' "$BASELINE_COMMIT" > "$RIG/baseline-commit.txt"  # G-1：供 rig-inner 打印
 cp scripts/install.sh "$RIG/install.sh"
 cp scripts/rig/rig-inner.sh "$RIG/rig-inner.sh"
 cp scripts/rig/stubs/* "$RIG/stubs/"
