@@ -171,6 +171,7 @@ input[type=checkbox]{width:auto}
       <button onclick="addNode()">添加 IP</button>
     </div>
     <table><thead><tr><th>名称</th><th>IP</th><th>地区</th><th>状态</th><th>延迟</th><th>备注</th><th></th></tr></thead><tbody id="nodesBody"></tbody></table>
+    <p class="muted">想让某台自己的 VPS 亲自做解锁出口：点每行“复制安装命令”，到那台机器粘贴执行一次就装好 SNI 代理（allowlist 已按已登记的 DNS 服务器公网 IP 填好）；SNI 代理要占 443 端口，被 nginx/Caddy 占了要先让出来。</p>
   </div>
 
   <div id="pane-public" class="card hidden">
@@ -642,7 +643,7 @@ function renderNodes(){
   $('nodesBody').innerHTML=NODES.map(n=>`<tr><td>${esc(n.name)}</td><td>${REVEALED[n.id]?esc(REVEALED[n.id]):esc(n.ip)} <button class="ghost" onclick="toggleReveal('${n.id}')">${REVEALED[n.id]?'隐藏':'显示'}</button></td><td>${esc(n.region)}</td>
   <td>${n.status==='online'?'<span class="badge ok">在线</span>':n.status==='offline'?'<span class="badge bad">离线（仅探活失败，不自动改规则）</span>':'<span class="badge dim">未知</span>'}</td>
   <td>${typeof n.latency_ms==='number'&&n.latency_ms>=0?n.latency_ms+' ms':'—'}</td><td>${esc(n.note||'')}</td>
-  <td><button class="danger" onclick="delNode('${n.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="7" class="muted">还没有解锁 IP：上方添加任意 IP 即可</td></tr>';
+  <td><button onclick="copyNodeInstall()">复制安装命令</button> <button class="danger" onclick="delNode('${n.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="7" class="muted">还没有解锁 IP：上方添加任意 IP 即可</td></tr>';
 }
 async function addNode(){
   const name=$('n-name').value.trim(),ip=$('n-ip').value.trim(),region=$('n-region').value,note=$('n-note').value.trim();
@@ -748,6 +749,21 @@ async function copyServerInstall(id){
   const j=await api('/api/v1/servers/'+id+'/reveal');
   navigator.clipboard.writeText(serverInstallCmd(s,j.token,j.default_unlock_ip));
   alert('安装命令已复制，到目标 VPS 粘贴执行即可。');
+}
+// 节点一键安装命令（用户 2026-11-21 定）：allowlist 取已登记的 DNS 服务器
+// 公网 IP（servers 表的 ip 字段，逗号拼接）。列表接口只给打码 IP，所以
+// 这里逐台调 reveal 取完整 IP；一台都没登记就不带这个变量，安装脚本到
+// 机器上交互问（ask() 本来就会问）。重跑一次命令就能更新 allowlist。
+async function copyNodeInstall(){
+  const ips=[];
+  for(const s of SERVERS){
+    try{const j=await api('/api/v1/servers/'+s.id+'/reveal');if(j.ip&&!ips.includes(j.ip))ips.push(j.ip)}catch(e){}
+  }
+  let c='curl -fsSL '+location.origin+'/install.sh | ';
+  if(ips.length)c+='DNS_SNI_ALLOWLIST='+sq(ips.join(','))+' ';
+  c+='bash -s -- --unlock-node';
+  navigator.clipboard.writeText(c);
+  alert(ips.length?'安装命令已复制，到节点机器粘贴执行即可。':'安装命令已复制（未登记 DNS 服务器，allowlist 未填，安装时按提示输入）。');
 }
 async function addServer(){
   const name=$('s-name').value.trim(),ip=$('s-ip').value.trim(),def=$('s-defip').value.trim(),allow=$('s-allow').value.trim();
