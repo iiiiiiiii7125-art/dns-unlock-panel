@@ -1,0 +1,24 @@
+可用的备份（时间倒序）：
+  [1] 2026-11-21T22:26:55+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-222655_pre-takeover
+  [2] 2026-11-21T22:26:21+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-222621_pre-restore
+  [3] 2026-11-21T22:26:14+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-222614_pre-takeover
+  [4] 2026-11-21T22:25:00+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-222500_pre-restore
+  [5] 2026-11-21T22:24:54+0000  pre-takeover  DNS: 1.1.1.1 1.0.0.1   /var/lib/dnsunlock/backup/20261121-222454_pre-takeover
+  [6] 2026-11-21T22:22:46+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-222246_pre-restore
+  [7] 2026-11-21T22:22:40+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-222240_pre-takeover
+  [8] 2026-11-21T22:22:05+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-222205_pre-restore
+  [9] 2026-11-21T22:21:18+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-222118_pre-takeover
+  [10] 2026-11-21T22:19:54+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-221954_pre-restore
+  [11] 2026-11-21T22:19:47+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-221947_pre-takeover
+  [12] 2026-11-21T22:19:07+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-221907_pre-takeover
+非交互模式：默认还原最早的一份（原始状态）: /var/lib/dnsunlock/backup/20261121-221907_pre-takeover
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261121-222703_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-222703_pre-restore
+从备份还原: /var/lib/dnsunlock/backup/20261121-221907_pre-takeover（pre-takeover，2026-11-21T22:19:07+0000）
+还原前 agent 在运行（监听 127.0.0.1:15353），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）...
+跳过 NM 重载（备份时未在跑或无 nmcli）
+跳过 resolvconf 重载（备份时未在跑）
+已还原 /etc/resolv.conf <- /var/lib/dnsunlock/backup/20261121-221907_pre-takeover/resolv.conf
+已还原并验证通过（getent hosts example.com 有结果）
+agent 还原前在运行（监听 127.0.0.1:15353），正在恢复...
+agent 已恢复运行（监听 127.0.0.1:15353）。
