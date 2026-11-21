@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 一键还原 /etc/resolv.conf（与 install.sh 内嵌版本一致；install.sh 安装时也会生成一份到 /usr/local/bin/dnsunlock-restore-dns）。
+# 同步办法：改完本文件跑 scripts/sync-restore.sh，再跑 scripts/check-restore-sync.sh 验证。
 # 还原 /etc/resolv.conf 到接管前的原备份，并恢复 systemd-resolved / NetworkManager / resolvconf / dhclient / cloud-init / netplan。
 # v0.1.6：结构化备份 /var/lib/dnsunlock/backup/<时间戳>_<标签>/ + metadata.txt；
 # 还原默认选最早的一份（原始状态），还原前先自动备份当前状态，失败就中止；
