@@ -21,7 +21,8 @@
 #   （chroot 内 :53 / :15353）+ 真 dig/getent/curl/ss/ip + 真 chroot 绑定探测。
 # stub 的部分（PATH 前置 /root/rig/stubs，只在 chroot 内生效）：
 #   systemctl / resolvectl / nmcli / netplan / resolvconf / chattr / lsattr /
-#   python3（只实现 can_bind_listen 的 bind 探测，调 Go 写的 bindprobe）。
+#   python3（只拦截 can_bind_listen 的 bind 探测，调 Go 写的 bindprobe；
+#   其余调用转给 rootfs 里的真 /usr/bin/python3，见 scripts/rig/provision-rootfs.sh）。
 #   每个 stub 记录每次调用（命令+参数）到 /root/rig/logs/calls.log；
 #   systemctl 模拟最小状态（is-active/is-enabled 的 canned 值、
 #   disable/restart 写 marker 并真的启停台架里的 agent / 干掉 stub 占位进程）。
@@ -115,7 +116,8 @@ cleanup_panel() {
 }
 trap cleanup_panel EXIT
 
-[ -d "$ROOT" ] || { echo "台架 rootfs 不存在: $ROOT"; exit 1; }
+# 台架 rootfs 由 provision-rootfs.sh 供应（在单跑锁内、端口复查后，见下），
+# 这里不只做存在检查——rootfs 缺失或缺 python3 都由它重建/补装。
 command -v unshare >/dev/null || { echo "需要 unshare"; exit 1; }
 command -v chroot >/dev/null || { echo "需要 chroot"; exit 1; }
 [ -x "$GO" ] || { echo "找不到 go：设 GO=/path/to/go（默认 ~/go/bin/go）"; exit 1; }
@@ -183,6 +185,12 @@ check_rig_ports_free() {
 }
 cleanup_stale_rig_processes
 check_rig_ports_free
+
+# R2-09 之后台架 rootfs 必须含真 python3（S14 verify_rule_domain 用它解析
+# JSON；stub 只实现 can_bind_listen，其余调用转给 /usr/bin/python3）。
+# 放在单跑锁内做：rootfs 若缺失则 debootstrap 重建，若缺 python3 则
+# chroot 内 apt 补装；参数以 scripts/rig/provision-rootfs.sh 为准。
+RIG_ROOTFS="$ROOT" bash scripts/rig/provision-rootfs.sh || { echo "台架 rootfs 供应失败"; exit 1; }
 
 echo "== 构建 dnsunlock（amd64）=="
 "$GO" build -trimpath -o dist/dnsunlock-linux-amd64 ./cmd/dnsunlock
