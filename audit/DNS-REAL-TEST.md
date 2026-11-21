@@ -172,3 +172,43 @@
   注意：测试机面板现跑的是从 ui/rules-refresh 树构建的二进制（含未发布的
   规则页重做），与 v0.1.4 发版构建的差异仅在 served index.html，降级代码
   完全一致。
+## v0.1.5：分流规则页重做（分支 ui/rules-refresh，已 rebase 到 v0.1.4 发布）
+
+针对用户反馈“规则页丑、老是自动跳转刷新、热门服务要像 AKDNS 那样摆在上面”
+（另有 AKDNS“配置服务”弹窗截图作视觉参照：卡片格、logo、地区角标、状态行、
+选中蓝边、顶部搜索、底部保存配置）。
+
+改动（仅 web/index.html + internal/panel/assets/index.html，两份保持字节一致）：
+- 15 秒轮询不再整页刷新：setInterval 只调 pollStatus()（拉 /api/v1/status 轻量接口，
+  更新统计行）；只有 config_version 或在线数变化时才拉数据，且按 rules/nodes/
+  servers 的 JSON 哈希决定是否重绘；类别下拉框只有类别列表本身变了才重建，
+  选中值保留。renderRules() 重建前后保存/恢复 window 滚动位置与焦点（含搜索框光标）。
+- 热门服务卡片格（AKDNS 式）：Tier-1 12 个平台（Netflix、YouTube Premium、Disney+、
+  ChatGPT、TikTok、Spotify、HBO Max、Claude、Gemini、Instagram、Prime Video、Hulu），
+  5 列可滚动；每张卡：首字母 logo 色块、名称+中文名、左上角地区角标（有规则才显示）、
+  状态行（地区名 · 生效 IP / nameserver · IP / 未开启）。点卡选中蓝边，下方展开内联
+  编辑器（模式/地区/节点/手填 IP/上游 DNS/备用 IP/自动切换，保存配置/清除），
+  与表格行同一套字段、同一条 PUT 接口，保存后只更新该行 + 卡片 + 已设置条，
+  弹出“已保存”toast，不整页刷新、不跳回顶部。已设置条列出所有已设规则，点芯片
+  跳到表格对应行并高亮闪烁。搜索框同时筛卡片（有关键词时卡片格显示全部匹配平台，
+  最多 30 张）和表格；表格仍保留全部 169 平台、搜索、类别、只看已设置、
+  409 冲突 confirm+force 流程。
+- 表格美化：已设置/未设置徽标（绿/灰）、行距加大、悬停底色、跳转行黄色闪烁。
+- 未改：任何 API 调用、规则语义、默认数据、servers/nodes/public 等其他分区；
+  未做 AKDNS 底栏的导出/导入（无此接口，不新造）；未按 AKDNS“先定 IP 再配服务”
+  改规则模型（本面板规则是按平台选 IP，语义不变，卡片+编辑器已是单一配置入口）。
+
+沙箱验证（2026-11-21，面板二进制本地 :18080，临时数据）：
+- `node --check` 抽出的内联脚本：通过。
+- 服务端 served index.html 与源码字节一致；含 hotCards/cardEditor/setStrip/
+  selectCard/saveEditor/renderHot/pollStatus/toast 等新标记；旧
+  `setInterval(...refresh...)` 已不存在。
+- API 契约：登录 admin/admin（must_change）→ 改密 UiTest2026! → 重登录；
+  /api/v1/status：169 平台、16 条种子规则，config_version 1；rules 169 条，
+  tiktok tier 1、has_rule true；PUT tiktok（region JP + custom_ip 203.0.113.99，
+  与卡片编辑器发的 body 一致）→ resolved_ip 203.0.*.*、config_version 2；
+  PUT 仅 platform_id 清除 → has_rule false、rule null；PUT youtube→US 未触发
+  409（沙箱无节点，两条规则都解析不到 IP，按服务端“冲突指解析到不同 IP”
+  的判定本就不冲突；UI 的 409 confirm+force 代码原文保留，未动）。
+- 已 rebase 到 v0.1.4（98aa615）之上：本机回环降级（agent.go / install.sh）已包含在内；另含 install.sh 修补：stdin 关闭且无 tty 时 ask() 不再静默退出，改为报错退出。
+
