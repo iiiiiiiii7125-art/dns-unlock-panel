@@ -230,7 +230,11 @@ func (a *Agent) lookup(name string) (target, bool) {
 // panel URL: (a) the configured URL itself, (b) plain http on the same
 // host :8080 (the panel always listens on :8080 directly; 443 is only
 // Caddy's reverse proxy), (c) http on each resolved IP of the host
-// :8080. Nothing here weakens the allowlist or adds a port/relay.
+// :8080, (d) http://127.0.0.1:8080 last (panel and agent on the same
+// machine: the public IP may be unreachable from the machine itself
+// when there is no hairpin NAT, while loopback always works; refused
+// instantly when no local panel listens). Nothing here weakens the
+// allowlist or adds a port/relay.
 // Resolution happens once at startup; a failure just drops (c).
 func panelCandidates(rawurl string) []string {
 	seen := map[string]bool{}
@@ -265,6 +269,8 @@ func panelCandidates(rawurl string) []string {
 			}
 		}
 	}
+	// (d) loopback :8080 last — panel and agent on the same machine.
+	add("http://127.0.0.1:8080")
 	return out
 }
 

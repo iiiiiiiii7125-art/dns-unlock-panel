@@ -243,6 +243,9 @@ probe_panel() {
       esac
     done
   fi
+  # (d) 本机 :8080（面板和 agent 在同一台机器上时：公网 IP 可能因无 hairpin
+  # NAT 而不通，本机回环一定通；没有本机面板时连接被拒，瞬间失败，无代价）
+  cands+=("http://127.0.0.1:8080")
   for cand in "${cands[@]}"; do
     seen=0
     for u in "${uniq[@]}"; do [ "$u" = "$cand" ] && seen=1; done
@@ -257,7 +260,7 @@ probe_panel() {
     echo "  探测 $cand -> 不通（HTTP ${code:-000}）" >&2
   done
   echo "面板都连不上，试过：${uniq[*]}" >&2
-  echo "请检查面板是否在运行；如果 443 被挡，可用 --panel 指定面板机的内网地址，如：bash install.sh --panel http://<面板机内网IP>:8080" >&2
+  echo "请检查面板是否在运行；如果 443 被挡，可用 --panel 指定面板机的内网地址，如：bash install.sh --panel http://<面板机内网IP>:8080；面板和 agent 在同一台机器上时可用 --panel http://127.0.0.1:8080" >&2
   return 1
 }
 
