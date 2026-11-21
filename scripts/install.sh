@@ -1154,30 +1154,34 @@ _is_stub_host() {
   case "$1" in 127.0.0.53|127.0.0.54) return 0;; *) return 1;; esac
 }
 
-# stub_blockers [own_listen]：输出会挡住 resolved stub（127.0.0.53:53）绑定的
-# :53 监听（空格分隔），有则返回 0，无则返回 1。
+# stub_blockers [own_listen] [ignore_pid]：输出会挡住 resolved stub
+# （127.0.0.53:53）绑定的 :53 监听（空格分隔），有则返回 0，无则返回 1。
 # 挡住 ⟺ 通配符 :53 监听；resolved 自己的 stub（127.0.0.53/54:53）永远不算
-# 挡路；own_listen 给出时，agent 自己的通配符监听也不算（停掉后就没了）。
-# agent 自己 vs 别的进程靠 ss -tulnp 的 users 字段分辨：归属 dnsunlock 的
-# 跳过，归属明确是别的进程的算挡路；看不出归属时（ss 没给 users）按共存
-# 推断——agent 正在跑且占通配符 :53 时，通配符 :53 只能是它自己（两个进程
-# 绑不上同一个通配符 :53），也跳过。停后复查（无 own 参数）时任何通配符
-# :53 监听都算挡路。127.0.0.1:53 这类具体地址不挡 stub。
+# 挡路。own_listen 给出时（停 agent 之前）：agent 自己的通配符监听不算
+# （停掉后就没了）——归属 dnsunlock 的监听都算自己的（配置里的 listen 过
+# 期、实际监听地址对不上时也一样）；看不出归属（ss 没给 users）且 own 是
+# 通配符时按共存推断跳过——agent 正在跑且占通配符 :53 时，通配符 :53 只能
+# 是它自己（两个进程绑不上同一个通配符 :53）。停后复查（无 own 参数）时
+# 任何通配符 :53 监听都算挡路，但 ignore_pid 给出时跳过该 pid 的残留行
+# （刚杀掉的 agent 的僵尸/未回收监听行，端口实际已释放）。127.0.0.1:53
+# 这类具体地址不挡 stub。
 stub_blockers() {
-  local own="${1:-}" a host port own_host="" own_port="" found="" users=""
+  local own="${1:-}" _ignore_pid="${2:-}" a host port own_host="" own_port="" found="" users=""
   if [ -n "$own" ]; then own_host=$(_addr_host "$own"); own_port=$(_addr_port "$own"); fi
   while IFS="$(printf '\t')" read -r a users; do
     [ -n "$a" ] || continue
+    if [ -n "$_ignore_pid" ]; then
+      case "$users" in *"pid=$_ignore_pid,"*|*"pid=$_ignore_pid)"*) continue;; esac
+    fi
     host=$(_addr_host "$a"); port=$(_addr_port "$a")
     [ "$port" = "53" ] || continue
     _is_stub_host "$host" && continue
     _is_wildcard_host "$host" || continue
-    if [ -n "$own" ] && _is_wildcard_host "$own_host" && [ "$own_port" = "53" ]; then
-      case "$users" in
-        *dnsunlock*) continue ;;
-        "") continue ;;
-        *) : ;;
-      esac
+    if [ -n "$own" ]; then
+      case "$users" in *dnsunlock*) continue;; esac
+      if _is_wildcard_host "$own_host" && [ "$own_port" = "53" ]; then
+        case "$users" in "") continue;; esac
+      fi
     fi
     case " $found " in *" $a "*) ;; *) found="${found:+$found }$a";; esac
   done <<EOF
@@ -1212,15 +1216,116 @@ clear_pending_marker() {
   rm -f "$PENDING_MARKER" 2>/dev/null || true
 }
 
+# --- 无 unit agent 的端口兜底（V016-09）---
+# _addr_matches_listen <实际监听地址> <配置 listen>：通配符 listen 匹配任何
+# 通配符地址（:53 ⟷ 0.0.0.0:53 / [::]:53）；否则精确匹配。
+_addr_matches_listen() {
+  local a_host a_port l_host l_port
+  a_host=$(_addr_host "$1"); a_port=$(_addr_port "$1")
+  l_host=$(_addr_host "$2"); l_port=$(_addr_port "$2")
+  [ "$a_port" = "$l_port" ] || return 1
+  if _is_wildcard_host "$l_host"; then
+    _is_wildcard_host "$a_host"
+  else
+    [ "$a_host" = "$l_host" ]
+  fi
+}
+
+# _pid_gone <pid>：进程不存在、或已成僵尸（等父进程回收，端口已释放）都算没了。
+_pid_gone() {
+  local pid="$1" st=""
+  kill -0 "$pid" 2>/dev/null || return 0
+  if [ -r "/proc/$pid/stat" ]; then
+    st=$(sed -n 's/^.*) \([A-Za-z]\).*/\1/p' "/proc/$pid/stat" 2>/dev/null || true)
+    [ "$st" = "Z" ] && return 0
+  fi
+  return 1
+}
+
+# agent_pid_on_listen <listen>：输出占着该监听地址的 dnsunlock 进程 pid。
+# 先读 ss -tulnp 的 users 字段（归属 dnsunlock 且地址匹配）；ss 没给 users
+# 时回退 pgrep -f dns-agent，再确认该监听地址确实有人占着。
+agent_pid_on_listen() {
+  local listen="$1" a users pid=""
+  while IFS="$(printf '\t')" read -r a users; do
+    case "$users" in *dnsunlock*) ;; *) continue;; esac
+    _addr_matches_listen "$a" "$listen" || continue
+    pid=$(printf '%s' "$users" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -1)
+    [ -n "$pid" ] && { printf '%s' "$pid"; return 0; }
+  done <<EOF
+$(ss_listen_53_p 2>/dev/null || true)
+EOF
+  if command -v pgrep >/dev/null 2>&1; then
+    pid=$(pgrep -f "dns-agent" 2>/dev/null | grep -v "^$$$" | head -1)
+    if [ -n "$pid" ] && ! _pid_gone "$pid"; then
+      while IFS="$(printf '\t')" read -r a users; do
+        _addr_matches_listen "$a" "$listen" && { printf '%s' "$pid"; return 0; }
+      done <<EOF
+$(ss_listen_53_p 2>/dev/null || true)
+EOF
+    fi
+  fi
+  return 1
+}
+
+# agent_pid_any_53：输出“pid 监听地址”，找任何一个 dnsunlock 占的 :53 监听
+# （配置里的 listen 过期、与实际监听对不上时用）。
+agent_pid_any_53() {
+  local a users pid=""
+  while IFS="$(printf '\t')" read -r a users; do
+    case "$users" in *dnsunlock*) ;; *) continue;; esac
+    pid=$(printf '%s' "$users" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -1)
+    [ -n "$pid" ] && { printf '%s %s' "$pid" "$a"; return 0; }
+  done <<EOF
+$(ss_listen_53_p 2>/dev/null || true)
+EOF
+  return 1
+}
+
+# stop_agent_no_unit <pid>：TERM，等监听消失或进程没了（最多 5 秒）；还不走
+# 就 KILL，再等 2 秒。成功返回 0。
+stop_agent_no_unit() {
+  local pid="$1" _i
+  kill -TERM "$pid" 2>/dev/null || return 0
+  for _i in 1 2 3 4 5; do
+    _pid_gone "$pid" && return 0
+    if command -v ss >/dev/null 2>&1; then
+      agent_pid_on_listen "$AGENT_LISTEN" >/dev/null 2>&1 || return 0
+    fi
+    sleep 1
+  done
+  kill -KILL "$pid" 2>/dev/null || true
+  for _i in 1 2; do
+    _pid_gone "$pid" && return 0
+    if command -v ss >/dev/null 2>&1; then
+      agent_pid_on_listen "$AGENT_LISTEN" >/dev/null 2>&1 || return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 # restart_agent：把 agent 起回来。成功返回 0（并清待办标记），失败返回 1。
-# unit 方式；无 unit 时由 V016-09 的端口兜底分支处理。
+# 有 unit 时 systemctl start；无 unit 时直接起二进制（与 unit 的 ExecStart
+# 同一条命令），再确认端口上确实是 dnsunlock 在监听。
 restart_agent() {
+  local _listen="${AGENT_LISTEN:-$(agent_listen_from_config)}" _i
   if agent_unit_exists; then
     if systemctl start "$AGENT_UNIT" 2>/dev/null && systemctl is-active --quiet "$AGENT_UNIT" 2>/dev/null; then
       clear_pending_marker
       return 0
     fi
     return 1
+  fi
+  if [ -x /usr/local/bin/dnsunlock ] && [ -f /etc/dnsunlock/config.json ]; then
+    nohup /usr/local/bin/dnsunlock dns-agent --config /etc/dnsunlock/config.json >/dev/null 2>&1 &
+    for _i in 1 2 3 4 5; do
+      sleep 1
+      if agent_pid_on_listen "$_listen" >/dev/null 2>&1; then
+        clear_pending_marker
+        return 0
+      fi
+    done
   fi
   return 1
 }
@@ -1233,9 +1338,63 @@ abort_restore_agent() {
     echo "agent 已恢复运行（监听 $AGENT_LISTEN），系统 DNS 未改动。"
     return 0
   fi
-  echo "警告: agent 未能恢复运行（监听 $AGENT_LISTEN），分流已停止；系统 DNS 未改动（resolv.conf 仍指向 agent）。请手动 systemctl start dnsunlock-agent，或重跑安装脚本。" >&2
+  if [ "$AGENT_NO_UNIT" = 1 ]; then
+    echo "警告: agent 未能恢复运行（监听 $AGENT_LISTEN，无 systemd unit），分流已停止；系统 DNS 未改动（resolv.conf 仍指向 agent）。请手动运行 /usr/local/bin/dnsunlock dns-agent --config /etc/dnsunlock/config.json，或重跑安装脚本。" >&2
+  else
+    echo "警告: agent 未能恢复运行（监听 $AGENT_LISTEN），分流已停止；系统 DNS 未改动（resolv.conf 仍指向 agent）。请手动 systemctl start dnsunlock-agent，或重跑安装脚本。" >&2
+  fi
   write_pending_marker "$AGENT_LISTEN"
   return 1
+}
+
+# record_and_stop_agent_no_unit <pending_listen>：无 systemd unit 时的端口兜底。
+# 按配置 listen 找端口上的 dnsunlock 进程并杀掉；配置过期时按实际监听处理。
+# 外来通配符 :53 占位在动手之前就中止（agent 不动）；停完仍有占位时中止，
+# 但先把 agent 起回来（起不回来也要明说 + 留待办标记）。
+record_and_stop_agent_no_unit() {
+  local _pending="$1" _pid="" _any="" _blockers="" _i
+  AGENT_NO_UNIT=1
+  if [ -n "$_pending" ]; then AGENT_WAS_ACTIVE=1; AGENT_LISTEN="$_pending"; fi
+  AGENT_LISTEN=$(agent_listen_from_config)
+  if [ ! -f /etc/dnsunlock/config.json ] && [ -n "$_pending" ]; then AGENT_LISTEN="$_pending"; fi
+  # 停之前先检查：有没有停完也不会消失的、会挡 stub 的监听。
+  if _blockers=$(stub_blockers "$AGENT_LISTEN"); then
+    echo "错误: :53 上已有其他服务监听（$_blockers），重启 systemd-resolved 会抢不到 stub，还原已中止（agent 未动，系统 DNS 未改；只写了一份还原前备份 ${PRE_RESTORE_BACKUP:-（见 /var/lib/dnsunlock/backup/ 下最新一份）}）；请先处理占 :53 的服务后重跑" >&2
+    exit 1
+  fi
+  _pid=$(agent_pid_on_listen "$AGENT_LISTEN" 2>/dev/null || true)
+  if [ -z "$_pid" ]; then
+    _any=$(agent_pid_any_53 2>/dev/null || true)
+    if [ -n "$_any" ]; then
+      _pid="${_any%% *}"; AGENT_LISTEN="${_any#* }"
+    fi
+  fi
+  if [ -n "$_pid" ]; then
+    AGENT_WAS_ACTIVE=1
+    clear_pending_marker
+    echo "还原前 agent 在运行（监听 $AGENT_LISTEN，无 systemd unit，按端口找到进程 $_pid），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）..."
+    if ! stop_agent_no_unit "$_pid"; then
+      echo "错误: 停 agent 进程 $_pid 失败（kill 后仍在监听 $AGENT_LISTEN），还原已中止（只写了一份还原前备份 ${PRE_RESTORE_BACKUP:-（见 /var/lib/dnsunlock/backup/ 下最新一份）}，未改系统 DNS 配置）；请手动 kill $_pid 后重跑" >&2
+      exit 1
+    fi
+  elif [ "$AGENT_WAS_ACTIVE" = 1 ]; then
+    echo "上次还原中止后 agent 未能恢复（监听 $AGENT_LISTEN，原本在运行）；本次还原继续，还原后将尝试恢复它..."
+  else
+    # 没 unit、端口上也没有 agent：没什么要停的，直接还原。
+    return 0
+  fi
+  # 停完确认挡 stub 的监听真没了（忽略刚杀掉的 agent 的残留行）；没有 ss 就跳过。
+  if command -v ss >/dev/null 2>&1; then
+    for _i in 1 2 3 4 5 6 7 8 9 10; do
+      stub_blockers "" "$_pid" >/dev/null 2>&1 || return 0
+      sleep 1
+    done
+    _blockers=$(stub_blockers "" "$_pid" 2>/dev/null || true)
+    echo "错误: agent 已停，但 :53 仍被占（${_blockers:-别的服务}），还原已中止（只写了一份还原前备份 ${PRE_RESTORE_BACKUP:-（见 /var/lib/dnsunlock/backup/ 下最新一份）}，未改系统 DNS 配置）" >&2
+    abort_restore_agent || true
+    exit 1
+  fi
+  return 0
 }
 
 # 还原前记 agent 状态并停掉它。
@@ -1252,8 +1411,7 @@ record_and_stop_agent() {
   # 上次中止留下的待办：agent 曾在运行、却没能恢复——重跑时仍算“曾在运行”。
   _pending=$(read_pending_marker 2>/dev/null || true)
   if ! agent_unit_exists; then
-    # 无 unit 的 agent 对本修复不可见（V016-09 修端口兜底）；待办标记先留着，
-    # 不删（V016-09 的端口兜底会接手它）。
+    record_and_stop_agent_no_unit "$_pending"
     return 0
   fi
   if [ -n "$_pending" ]; then AGENT_WAS_ACTIVE=1; AGENT_LISTEN="$_pending"; fi
