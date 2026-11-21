@@ -25,6 +25,28 @@ code{background:#f3f4f6;padding:2px 6px;border-radius:4px;word-break:break-all}
 #login{max-width:420px;margin:80px auto}
 .hidden{display:none}
 input[type=checkbox]{width:auto}
+/* 热门服务卡片（AKDNS 配置服务式）：logo + 名称 + 地区角标 + 状态行，选中蓝边 */
+.hot-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;max-height:360px;overflow-y:auto;padding:2px}
+@media(max-width:900px){.hot-grid{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:700px){.hot-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:480px){.hot-grid{grid-template-columns:repeat(2,1fr)}}
+.hot-card{position:relative;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 8px 10px;cursor:pointer;text-align:center}
+.hot-card:hover{border-color:#9ca3af}
+.hot-card.sel{border:2px solid #2563eb;background:#eff6ff;padding:11px 7px 9px}
+.hot-flag{position:absolute;top:8px;left:8px;font-size:11px;font-weight:700;background:#eef2ff;color:#3730a3;border-radius:99px;padding:1px 7px}
+.hot-logo{width:44px;height:44px;border-radius:12px;margin:2px auto 8px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#fff}
+.hot-name{font-weight:700;font-size:14px}
+.hot-zh{font-size:12px;color:#6b7280}
+.hot-status{font-size:12px;color:#6b7280;margin-top:4px;word-break:break-all}
+.hot-status.on{color:#166534;font-weight:700}
+#cardEditor{border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;padding:14px;margin-top:12px}
+.set-chip{display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:99px;padding:4px 10px;font-size:13px;cursor:pointer}
+#rulesBody td{padding:12px 10px}
+#rulesBody tr:hover{background:#f9fafb}
+@keyframes flash{0%{background:#fef9c3}100%{background:transparent}}
+.flash{animation:flash 2s ease}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:99px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:99}
+#toast.show{opacity:1}
 </style>
 </head>
 <body>
@@ -62,9 +84,9 @@ input[type=checkbox]{width:auto}
   <div id="pane-rules" class="card">
     <h2>分流规则 <span class="muted">— 每个平台选一个解锁 IP，保存后 5 秒内生效</span></h2>
     <div class="row">
-      <input id="q" placeholder="搜索平台，如 netflix / 奈飞 / chatgpt" style="flex:1" oninput="renderRules()">
-      <select id="cat" onchange="renderRules()"><option value="">全部类别</option></select>
-      <label><input type="checkbox" id="onlySet" onchange="renderRules()"> 只看已设置</label>
+      <input id="q" placeholder="搜索平台，如 netflix / 奈飞 / chatgpt" style="flex:1" oninput="onFilter()">
+      <select id="cat" onchange="onFilter()"><option value="">全部类别</option></select>
+      <label><input type="checkbox" id="onlySet" onchange="onFilter()"> 只看已设置</label>
     </div>
     <div class="row" id="chips">
       <span class="muted">主用途：</span>
@@ -77,6 +99,11 @@ input[type=checkbox]{width:auto}
       <button class="ghost" onclick="setCat('香港专区')">香港专区</button>
       <button class="ghost" onclick="setCat('其他')">其他</button>
     </div>
+    <h3 style="margin-bottom:8px">热门服务 <span class="muted">— 点一张卡片，下面直接改它的解锁设置；上面搜索框也能筛卡片</span></h3>
+    <div id="hotCards" class="hot-grid"></div>
+    <div id="cardEditor" class="hidden"></div>
+    <div class="row" id="setStrip" style="margin-top:12px"></div>
+    <h3>全部平台 <span class="muted">— 长尾平台在这里改，和卡片是同一套规则</span></h3>
     <table><thead><tr><th>平台</th><th>类别</th><th>模式 / 地区</th><th>解锁 IP（下拉选已有 / 直接手填）</th><th>备用与自动切换</th><th>当前生效 IP</th><th></th></tr></thead>
     <tbody id="rulesBody"></tbody></table>
   </div>
@@ -134,6 +161,7 @@ input[type=checkbox]{width:auto}
     <div id="domainsList" class="muted"></div>
   </div>
 </div>
+<div id="toast"></div>
 </main>
 <script>
 let TOKEN=sessionStorage.getItem('dnsunlock_session')||'';
@@ -188,60 +216,224 @@ async function init(){
   const rs=$('n-region');rs.innerHTML=REGIONS.map(r=>`<option value="${r.code}">${r.name} (${r.code})</option>`).join('');
   await refresh();
 }
-async function refresh(){
-  const st=await api('/api/v1/status');
+// 轮询状态：只更新统计行；只有配置版本或在线数变了，才拉取数据并按哈希决定重绘。
+// 15 秒一次的轮询不再重建表格/下拉框，正在输入的内容和滚动位置不会丢。
+let lastCfg=-1,lastNodesOnline=-1,lastServersOnline=-1;
+let lastRulesJSON='',lastNodesJSON='',lastServersJSON='',lastCats='';
+function updateStats(st){
   $('stats').innerHTML=`<div class="stat"><b>${st.nodes_online}/${st.nodes_total}</b>解锁 IP 在线</div><div class="stat"><b>${st.platforms_total}</b>平台</div><div class="stat"><b>${st.rules_total}</b>已设规则</div><div class="stat"><b>${st.servers_online}/${st.servers_total}</b>DNS 服务器在线</div>`;
   $('cfgline').textContent='配置版本 v'+st.config_version+' · 上游 DNS '+st.upstream+' · 规则修改后 DNS agent 约 5 秒内生效';
+  $('ver').textContent='配置版本 v'+st.config_version;
+}
+async function pollStatus(){
+  if($('app').classList.contains('hidden'))return;
+  let st; try{st=await api('/api/v1/status')}catch(e){return}
+  updateStats(st);
+  if(st.config_version!==lastCfg||st.nodes_online!==lastNodesOnline||st.servers_online!==lastServersOnline){
+    lastCfg=st.config_version;lastNodesOnline=st.nodes_online;lastServersOnline=st.servers_online;
+    await refreshData();
+  }
+}
+async function refresh(){
+  const st=await api('/api/v1/status');
+  updateStats(st);
+  lastCfg=st.config_version;lastNodesOnline=st.nodes_online;lastServersOnline=st.servers_online;
   NODES=await api('/api/v1/nodes');
   RULES=await api('/api/v1/rules');
   SERVERS=await api('/api/v1/servers');
   PLATFORMS=RULES.map(r=>r.platform);
+  lastRulesJSON=JSON.stringify(RULES);lastNodesJSON=JSON.stringify(NODES);lastServersJSON=JSON.stringify(SERVERS);
+  renderCats();renderRules();renderHot();renderNodes();renderServers();
+}
+async function refreshData(){
+  const [nodes,rules,servers]=await Promise.all([api('/api/v1/nodes'),api('/api/v1/rules'),api('/api/v1/servers')]);
+  NODES=nodes;RULES=rules;SERVERS=servers;PLATFORMS=RULES.map(r=>r.platform);
+  const rj=JSON.stringify(rules),nj=JSON.stringify(nodes),sj=JSON.stringify(servers);
+  if(rj!==lastRulesJSON||nj!==lastNodesJSON){lastRulesJSON=rj;lastNodesJSON=nj;renderRules();renderHot();renderNodes()}
+  if(sj!==lastServersJSON){lastServersJSON=sj;renderServers()}
+  renderCats();
+}
+function renderCats(){
   const CAT_ORDER=['流媒体','AI 服务','社交与娱乐','日本专区','台湾专区','香港专区','其他'];
   const cats=[...new Set(PLATFORMS.map(p=>p.category))].sort((a,b)=>CAT_ORDER.indexOf(a)-CAT_ORDER.indexOf(b));
+  const key=cats.join('|');
+  if(key===lastCats)return; // 类别没变就不重建下拉框，选中的值和焦点都保留
+  lastCats=key;
+  const cur=$('cat').value;
   $('cat').innerHTML='<option value="">全部类别</option>'+cats.map(c=>`<option>${c}</option>`).join('');
-  renderRules();renderNodes();renderServers();
+  if(cur&&cats.includes(cur))$('cat').value=cur;
 }
 function nodeOptions(sel){return '<option value="">— 选择已有 IP —</option>'+NODES.map(n=>`<option value="${n.id}" ${n.id===sel?'selected':''}>${n.name} · ${n.ip} · ${n.region}</option>`).join('')}
 function regionOptions(sel){return '<option value="">— 地区自动选 —</option>'+REGIONS.map(r=>`<option value="${r.code}" ${r.code===sel?'selected':''}>${r.name}</option>`).join('')}
-function setCat(c){$('cat').value=c;renderRules()}
+function regionName(code){const r=REGIONS.find(x=>x.code===code);return r?r.name:code}
+function setCat(c){$('cat').value=c;onFilter()}
+function onFilter(){renderRules();renderHot()}
+function rowPasses(r,q,cat,only){
+  const p=r.platform;
+  if(cat&&p.category!==cat)return false;
+  if(only&&!r.has_rule)return false;
+  if(q&&!(p.name+' '+p.name_zh+' '+p.id).toLowerCase().includes(q))return false;
+  return true;
+}
+function rowHTML(r){
+  const p=r.platform,ru=r.rule||{};
+  const eff=r.resolved_ip||ru.nameserver||'';
+  const cur=r.has_rule?`<span class="badge ok">已设置</span>${eff?'<br>'+esc(eff):''}`:'<span class="badge dim">未设置</span><br><span class="muted">走上游解析</span>';
+  return `<tr id="row-${p.id}"><td><b>${esc(p.name)}</b> ${p.tier===1?'<span class="badge ok">热门</span>':p.tier===2?'<span class="badge">常用</span>':''}<br><span class="muted">${p.name_zh} · ${p.domains.slice(0,2).join(', ')}</span></td>
+  <td>${p.category}</td>
+  <td><select data-f="mode" data-p="${p.id}"><option value="address" ${(!ru.mode||ru.mode==='address')?'selected':''}>address 直接返回 IP</option><option value="nameserver" ${ru.mode==='nameserver'?'selected':''}>nameserver 转发查询</option></select><br>
+    <select data-f="region" data-p="${p.id}">${regionOptions(ru.region||'')}</select><br>
+    <input data-f="nameserver" data-p="${p.id}" placeholder="上游 DNS IP（nameserver 模式）" value="${ru.nameserver||''}" style="margin-top:4px;width:180px"></td>
+  <td><select data-f="node_id" data-p="${p.id}">${nodeOptions(ru.node_id||'')}</select><br>
+    <input data-f="custom_ip" data-p="${p.id}" placeholder="或直接填 IP，如 203.0.113.10" value="${ru.custom_ip||''}" style="margin-top:4px;width:180px"></td>
+  <td><input data-f="backup_ip" data-p="${p.id}" placeholder="备用 IP（可选）" value="${ru.backup_ip||''}" style="width:130px"><br>
+    <label class="muted"><input type="checkbox" data-f="auto_failover" data-p="${p.id}" ${ru.auto_failover?'checked':''}> 探活失败自动切备用</label></td>
+  <td>${cur}</td>
+  <td><button onclick="saveRule('${p.id}')">保存</button>${r.has_rule?` <button class="ghost" onclick="clearRule('${p.id}')">清除</button>`:''}</td></tr>`;
+}
 function renderRules(){
+  // 重建表格前记下滚动位置和焦点，重建后原样还回去——轮询不再打断输入。
+  const sy=window.scrollY,sx=window.scrollX;
+  const ae=document.activeElement;
+  let fk=null,ss=null,se=null;
+  if(ae&&ae!==document.body&&$('pane-rules').contains(ae)){
+    if(ae.id)fk='id:'+ae.id;
+    else if(ae.dataset&&ae.dataset.p)fk=ae.dataset.f+':'+ae.dataset.p;
+    if(ae.selectionStart!=null){ss=ae.selectionStart;se=ae.selectionEnd}
+  }
   const q=$('q').value.trim().toLowerCase(),cat=$('cat').value,only=$('onlySet').checked;
-  const rows=RULES.filter(r=>{
-    const p=r.platform;
-    if(cat&&p.category!==cat)return false;
-    if(only&&!r.has_rule)return false;
-    if(q&&!(p.name+' '+p.name_zh+' '+p.id).toLowerCase().includes(q))return false;
-    return true;
-  });
-  $('rulesBody').innerHTML=rows.map(r=>{
-    const p=r.platform,ru=r.rule||{};
-    const cur=r.resolved_ip||'<span class="muted">未设置（走上游解析）</span>';
-    return `<tr><td><b>${esc(p.name)}</b> ${p.tier===1?'<span class="badge ok">热门</span>':p.tier===2?'<span class="badge">常用</span>':''}<br><span class="muted">${p.name_zh} · ${p.domains.slice(0,2).join(', ')}</span></td>
-    <td>${p.category}</td>
-    <td><select data-f="mode" data-p="${p.id}"><option value="address" ${(!ru.mode||ru.mode==='address')?'selected':''}>address 直接返回 IP</option><option value="nameserver" ${ru.mode==='nameserver'?'selected':''}>nameserver 转发查询</option></select><br>
-      <select data-f="region" data-p="${p.id}">${regionOptions(ru.region||'')}</select><br>
-      <input data-f="nameserver" data-p="${p.id}" placeholder="上游 DNS IP（nameserver 模式）" value="${ru.nameserver||''}" style="margin-top:4px;width:180px"></td>
-    <td><select data-f="node_id" data-p="${p.id}">${nodeOptions(ru.node_id||'')}</select><br>
-      <input data-f="custom_ip" data-p="${p.id}" placeholder="或直接填 IP，如 203.0.113.10" value="${ru.custom_ip||''}" style="margin-top:4px;width:180px"></td>
-    <td><input data-f="backup_ip" data-p="${p.id}" placeholder="备用 IP（可选）" value="${ru.backup_ip||''}" style="width:130px"><br>
-      <label class="muted"><input type="checkbox" data-f="auto_failover" data-p="${p.id}" ${ru.auto_failover?'checked':''}> 探活失败自动切备用</label></td>
-    <td>${cur}</td>
-    <td><button onclick="saveRule('${p.id}')">保存</button>${r.has_rule?` <button class="ghost" onclick="clearRule('${p.id}')">清除</button>`:''}</td></tr>`;
-  }).join('')||'<tr><td colspan="7" class="muted">没有匹配的平台</td></tr>';
+  const rows=RULES.filter(r=>rowPasses(r,q,cat,only));
+  $('rulesBody').innerHTML=rows.map(rowHTML).join('')||'<tr><td colspan="7" class="muted">没有匹配的平台</td></tr>';
+  window.scrollTo(sx,sy);
+  if(fk){
+    let el=null;
+    if(fk.startsWith('id:'))el=$(fk.slice(3));
+    else{const i=fk.indexOf(':');el=document.querySelector(`[data-f="${fk.slice(0,i)}"][data-p="${fk.slice(i+1)}"]`)}
+    if(el){el.focus();if(ss!=null&&el.setSelectionRange){try{el.setSelectionRange(ss,se)}catch(e){}}}
+  }
 }
 function ruleForm(pid){
   const g=f=>{const el=document.querySelector(`[data-f="${f}"][data-p="${pid}"]`);return el?(el.type==='checkbox'?el.checked:el.value.trim()):''};
   return {platform_id:pid,node_id:g('node_id'),region:g('region'),custom_ip:g('custom_ip'),backup_ip:g('backup_ip'),auto_failover:g('auto_failover'),mode:g('mode'),nameserver:g('nameserver')};
 }
+// 只拉规则数据并更新受影响的那一行，不做全页刷新、不跳回顶部。
+async function refreshRulesOnly(){
+  RULES=await api('/api/v1/rules');
+  PLATFORMS=RULES.map(r=>r.platform);
+  lastRulesJSON=JSON.stringify(RULES);
+  renderHot();
+}
+function updateRow(pid){
+  const r=RULES.find(x=>x.platform.id===pid);
+  const tr=$('row-'+pid);
+  const q=$('q').value.trim().toLowerCase(),cat=$('cat').value,only=$('onlySet').checked;
+  const pass=r&&rowPasses(r,q,cat,only);
+  if(tr&&pass){tr.outerHTML=rowHTML(r)}
+  else if(tr&&!pass){tr.remove()}
+  else if(!tr&&pass){renderRules()} // 行需要新出现（位置不定），用保滚动/焦点的方式整表重绘
+}
 async function saveRule(pid){
   const b=ruleForm(pid);
   if(b.mode==='nameserver'&&!b.nameserver){alert('nameserver 模式需要填上游 DNS IP');return}
   if(b.mode!=='nameserver'&&!b.node_id&&!b.region&&!b.custom_ip){alert('请先选地区/IP 或直接填一个 IP');return}
-  try{await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)})}
-  catch(e){if(e.conflict&&confirm(e.message+'\n\n点确定强制保存（以本条规则为准）。')){b.force=true;await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)})}else if(!e.conflict){alert(e.message);return}}
-  await refresh();
+  let ok=false;
+  try{await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)});ok=true}
+  catch(e){if(e.conflict&&confirm(e.message+'\n\n点确定强制保存（以本条规则为准）。')){b.force=true;await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)});ok=true}else if(!e.conflict){alert(e.message);return}}
+  if(!ok)return; // 409 冲突里点了取消：什么都不改，也不再整页刷新
+  await refreshRulesOnly();
+  updateRow(pid);
+  toast('已保存');
 }
-async function clearRule(pid){await api('/api/v1/rules',{method:'PUT',body:JSON.stringify({platform_id:pid})});await refresh()}
+async function clearRule(pid){await api('/api/v1/rules',{method:'PUT',body:JSON.stringify({platform_id:pid})});await refreshRulesOnly();updateRow(pid);toast('已清除')}
+// ---- 热门服务卡片（AKDNS 配置服务式） ----
+const LOGO_COLORS=['#2563eb','#dc2626','#059669','#d97706','#7c3aed','#db2777','#0891b2','#65a30d'];
+function logoColor(id){let h=0;for(const c of id)h=(h*31+c.charCodeAt(0))>>>0;return LOGO_COLORS[h%LOGO_COLORS.length]}
+let SEL_PID='',lastEdJSON='';
+function cardStatus(r){
+  if(!r.has_rule)return '未开启';
+  const ru=r.rule||{};
+  if(ru.mode==='nameserver')return 'nameserver · '+(ru.nameserver||'');
+  return [ru.region?regionName(ru.region):'',r.resolved_ip||''].filter(Boolean).join(' · ')||'已设置';
+}
+function hotList(){
+  const q=$('q').value.trim().toLowerCase();
+  if(q)return RULES.filter(r=>(r.platform.name+' '+r.platform.name_zh+' '+r.platform.id).toLowerCase().includes(q)).slice(0,30);
+  return RULES.filter(r=>r.platform.tier===1);
+}
+function renderHot(){
+  const list=hotList();
+  $('hotCards').innerHTML=list.map(r=>{
+    const p=r.platform,ru=r.rule||{};
+    const flag=r.has_rule&&ru.region?`<span class="hot-flag">${esc(ru.region)}</span>`:'';
+    return `<div class="hot-card ${SEL_PID===p.id?'sel':''}" onclick="selectCard('${p.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter')selectCard('${p.id}')">
+      ${flag}<div class="hot-logo" style="background:${logoColor(p.id)}">${esc(p.name.charAt(0))}</div>
+      <div class="hot-name">${esc(p.name)}</div><div class="hot-zh">${esc(p.name_zh)}</div>
+      <div class="hot-status ${r.has_rule?'on':''}">${esc(cardStatus(r))}</div></div>`;
+  }).join('')||'<p class="muted">没有匹配的热门服务</p>';
+  const set=RULES.filter(r=>r.has_rule);
+  $('setStrip').innerHTML='<span class="muted">已设置（'+set.length+'）：</span>'+(set.map(r=>{
+    const p=r.platform,ru=r.rule||{};
+    const lbl=ru.region?regionName(ru.region):(ru.custom_ip||ru.nameserver||'');
+    return `<span class="set-chip" onclick="gotoRow('${p.id}')">${esc(p.name)} · ${esc(lbl)}</span>`;
+  }).join('')||'<span class="muted">还没有设置任何规则</span>');
+  if(SEL_PID)renderEditor();
+}
+function selectCard(pid){
+  if(SEL_PID===pid){SEL_PID='';$('cardEditor').classList.add('hidden');lastEdJSON=''}
+  else SEL_PID=pid;
+  renderHot();
+}
+// 卡片的内联编辑器：和表格行同一套字段、同一条保存接口；数据没变就不重建，正在输入不会丢。
+function renderEditor(){
+  const r=RULES.find(x=>x.platform.id===SEL_PID);
+  const ed=$('cardEditor');
+  if(!r){ed.classList.add('hidden');lastEdJSON='';return}
+  const j=JSON.stringify(r);
+  if(j===lastEdJSON&&!ed.classList.contains('hidden'))return;
+  lastEdJSON=j;
+  const p=r.platform,ru=r.rule||{};
+  ed.classList.remove('hidden');
+  ed.innerHTML=`<div class="row" style="justify-content:space-between;margin-bottom:4px"><b>${esc(p.name)} · ${esc(p.name_zh)}</b><span>${r.has_rule?'<span class="badge ok">已设置</span>':'<span class="badge dim">未开启</span>'} <button class="ghost" onclick="selectCard('${p.id}')">收起</button></span></div>
+  <div class="muted">当前生效：${r.has_rule?esc(r.resolved_ip||ru.nameserver||'—'):'走上游解析'}</div>
+  <div class="row" style="margin-top:8px">
+    <select id="ed-mode"><option value="address" ${(!ru.mode||ru.mode==='address')?'selected':''}>address 直接返回 IP</option><option value="nameserver" ${ru.mode==='nameserver'?'selected':''}>nameserver 转发查询</option></select>
+    <select id="ed-region">${regionOptions(ru.region||'')}</select>
+    <select id="ed-node">${nodeOptions(ru.node_id||'')}</select>
+    <input id="ed-custom" placeholder="或直接填 IP，如 203.0.113.10" value="${esc(ru.custom_ip||'')}" style="width:170px">
+  </div>
+  <div class="row">
+    <input id="ed-ns" placeholder="上游 DNS IP（nameserver 模式）" value="${esc(ru.nameserver||'')}" style="width:200px">
+    <input id="ed-backup" placeholder="备用 IP（可选）" value="${esc(ru.backup_ip||'')}" style="width:130px">
+    <label class="muted"><input type="checkbox" id="ed-failover" ${ru.auto_failover?'checked':''}> 探活失败自动切备用</label>
+  </div>
+  <div class="row" style="margin-bottom:0"><button onclick="saveEditor('${p.id}')">保存配置</button>${r.has_rule?` <button class="ghost" onclick="clearEditor('${p.id}')">清除</button>`:''}</div>`;
+}
+async function saveEditor(pid){
+  const g=id=>{const el=$(id);return el?(el.type==='checkbox'?el.checked:el.value.trim()):''};
+  const b={platform_id:pid,node_id:g('ed-node'),region:g('ed-region'),custom_ip:g('ed-custom'),backup_ip:g('ed-backup'),auto_failover:g('ed-failover'),mode:g('ed-mode'),nameserver:g('ed-ns')};
+  if(b.mode==='nameserver'&&!b.nameserver){alert('nameserver 模式需要填上游 DNS IP');return}
+  if(b.mode!=='nameserver'&&!b.node_id&&!b.region&&!b.custom_ip){alert('请先选地区/IP 或直接填一个 IP');return}
+  let ok=false;
+  try{await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)});ok=true}
+  catch(e){if(e.conflict&&confirm(e.message+'\n\n点确定强制保存（以本条规则为准）。')){b.force=true;await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)});ok=true}else if(!e.conflict){alert(e.message);return}}
+  if(!ok)return;
+  await refreshRulesOnly();
+  updateRow(pid);
+  toast('已保存');
+}
+async function clearEditor(pid){await api('/api/v1/rules',{method:'PUT',body:JSON.stringify({platform_id:pid})});await refreshRulesOnly();updateRow(pid);toast('已清除')}
+function gotoRow(pid){
+  SEL_PID=pid;
+  $('q').value='';$('cat').value='';$('onlySet').checked=false;
+  renderRules();renderHot();
+  const tr=$('row-'+pid);
+  if(tr){tr.scrollIntoView({behavior:'smooth',block:'center'});tr.classList.add('flash');setTimeout(()=>tr.classList.remove('flash'),2000)}
+}
+let toastTimer=null;
+function toast(msg){
+  const t=$('toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2000);
+}
 const REVEALED={};
 async function toggleReveal(id){
   if(REVEALED[id]){delete REVEALED[id];renderNodes();return}
@@ -331,7 +523,7 @@ async function savePublic(id){
 function copyInstall(){navigator.clipboard.writeText($('installCmd').textContent)}
 function copyUnlock(){navigator.clipboard.writeText($('unlockCmd').textContent)}
 if(TOKEN){init().catch(()=>{$('login').classList.remove('hidden');$('app').classList.add('hidden')})}
-setInterval(()=>{if(!$('app').classList.contains('hidden'))refresh().catch(()=>{})},15000);
+setInterval(()=>{pollStatus().catch(()=>{})},15000);
 </script>
 </body>
 </html>
