@@ -676,8 +676,11 @@ function renderServers(){
   }).join('')||'<tr><td colspan="8" class="muted">还没有 DNS 服务器：先在 VPS 上执行一键安装命令，或先登记再装机</td></tr>';
 }
 // v0.1.6 item 4：自测详情行。进行中/失败读本地 SELFTEST；已完成读 s.last_selftest。
+// V016-17：先按 request_id 对账——只要 last_selftest 就是本次请求，就清掉本地
+// error/pending 并展开结果，不让超时 error 永久遮住迟到结果（页内刷新也一样）。
 function selftestDetailRow(s,st){
-  if(st&&st.state==='pending')return `<tr><td colspan="8" class="muted">自测进行中（请求 ${esc(st.request_id||'—')}）…正在等 agent 回传结果，最长约 90 秒；本行会自动更新，不用刷新页面。</td></tr>`;
+  if(st&&st.request_id&&s.last_selftest&&s.last_selftest.request_id===st.request_id)st.state='done';
+  if(st&&st.state==='pending')return `<tr><td colspan="8" class="muted">自测进行中（请求 ${esc(st.request_id||'—')}）…正在等 agent 回传结果，最长约 150 秒；本行会自动更新，不用刷新页面。</td></tr>`;
   if(st&&st.state==='error')return `<tr><td colspan="8" style="color:#991b1b">自测失败：${esc(st.error||'')}</td></tr>`;
   const lt=s.last_selftest;
   if(!lt)return '';
@@ -692,7 +695,9 @@ function selftestDetailRow(s,st){
 }
 function platformName(pid){const p=PLATFORMS.find(x=>x.id===pid);return p?(p.name_zh?p.name+' '+p.name_zh:p.name):pid}
 // v0.1.6 item 4：POST /api/v1/servers/{id}/selftest 入队（返回 {request_id}），
-// 随后每 3 秒只拉 GET /api/v1/servers，按 request_id 等 last_selftest，最多 90 秒。
+// 随后每 3 秒只拉 GET /api/v1/servers，按 request_id 等 last_selftest，最多 150 秒
+// （V016-17：节点全挂时 14 条串行探活 + 心跳相位最坏约 113 秒，90 秒窗口不够）。
+// 超时后不就此定论：watchLateSelftest 继续在后台等迟到结果，结果一到就清掉 error。
 async function runSelftest(id){
   const cur=SELFTEST[id];
   if(cur&&cur.state==='pending')return;
@@ -704,7 +709,7 @@ async function runSelftest(id){
     if(!j||typeof j!=='object'||!j.request_id)throw new Error(j&&j.error?j.error:'后端未返回 request_id（自测接口可能尚未部署）');
     req=j.request_id;SELFTEST[id].request_id=req;
   }catch(e){SELFTEST[id]={request_id:'',state:'error',error:e.message};renderServers();updateSelftestAllStatus();return}
-  for(let i=0;i<30;i++){
+  for(let i=0;i<50;i++){
     await new Promise(r=>setTimeout(r,3000));
     if(!SELFTEST[id]||SELFTEST[id].state!=='pending')return;
     try{
@@ -714,8 +719,24 @@ async function runSelftest(id){
       renderServers();
     }catch(e){/* 轮询单次失败继续等，不打断 */}
   }
-  SELFTEST[id]={request_id:req,state:'error',error:'90 秒内未收到结果（agent 可能未取到请求或测试耗时较长），可稍后查看本行下方结果。'};
+  SELFTEST[id]={request_id:req,state:'error',error:'150 秒内未收到结果（agent 可能未取到请求或测试耗时较长）；仍在后台等，结果到了会自动出现在这里，也可以点“自测”重跑一次。'};
   renderServers();updateSelftestAllStatus();
+  watchLateSelftest(id,req);
+}
+// V016-17：超时后继续在后台等迟到结果（每 15 秒查一次，最长 10 分钟）。
+// 结果一到就把 error 清掉并展开；中途重跑了自测（request_id 变了）就停。
+async function watchLateSelftest(id,req){
+  for(let i=0;i<40;i++){
+    await new Promise(r=>setTimeout(r,15000));
+    const st=SELFTEST[id];
+    if(!st||st.request_id!==req||st.state!=='error')return;
+    try{
+      SERVERS=await api('/api/v1/servers');
+      const s=SERVERS.find(x=>x.id===id);
+      if(s&&s.last_selftest&&s.last_selftest.request_id===req){SELFTEST[id].state='done';renderServers();updateSelftestAllStatus();return}
+      renderServers();
+    }catch(e){/* 轮询单次失败继续等，不打断 */}
+  }
 }
 // v0.1.6 item 4：规则页“自测全部”——对所有在线 server 各发一次自测，结果仍在服务器页各行下方展开。
 async function selftestAll(){
