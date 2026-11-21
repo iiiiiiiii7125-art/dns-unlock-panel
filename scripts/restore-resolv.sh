@@ -426,6 +426,35 @@ record_and_stop_agent() {
   return 0
 }
 
+# ss_listen_all_p：输出当前所有监听行，格式“地址<TAB>users 字段（可能为空）”，
+# 去重（不限 :53，供 listen_blocked 判断非 53 端口的占用）。
+ss_listen_all_p() {
+  command -v ss >/dev/null 2>&1 || return 1
+  ss -tulnp 2>/dev/null | awk '$1 ~ /^(udp|tcp)/ {u=""; for (i=7;i<=NF;i++) u=u $i " "; sub(/ $/,"",u); print $5 "\t" u}' | sort -u
+}
+
+# listen_blocked <listen>：该监听地址现在是否会被别的进程挡住（V016-23）。
+# 输出挡住它的监听地址（空格分隔），有则返回 0，无则返回 1。
+# 挡住 ⟺ 有监听占了完全相同的地址，或有通配符监听占了同端口；
+# 归属 dnsunlock 的监听不算（那是 agent 自己刚停掉的残留行，端口实际已释放）。
+listen_blocked() {
+  local listen="$1" l_host l_port a host port found="" users=""
+  l_host=$(_addr_host "$listen"); l_port=$(_addr_port "$listen")
+  [ -n "$l_port" ] || return 1
+  while IFS="$(printf '\t')" read -r a users; do
+    [ -n "$a" ] || continue
+    host=$(_addr_host "$a"); port=$(_addr_port "$a")
+    [ "$port" = "$l_port" ] || continue
+    case "$users" in *dnsunlock*) continue;; esac
+    if [ "$host" = "$l_host" ] || _is_wildcard_host "$host"; then
+      case " $found " in *" $a "*) ;; *) found="${found:+$found }$a";; esac
+    fi
+  done <<EOF
+$(ss_listen_all_p 2>/dev/null || true)
+EOF
+  if [ -n "$found" ]; then echo "$found"; return 0; fi
+  return 1
+}
 # measure_53：实测 :53 的占用情况，供 restore_agent_after 决策（V016-08）。
 # 输出以下之一（第一行）：
 #   stub <地址>   — resolved 的 stub（127.0.0.53:53 或 127.0.0.54:53）在监听
@@ -464,7 +493,9 @@ PYEOF
 # agent 监听通配符 :53 时：先实测 :53 的占用——resolved 的 stub 真在
 # 127.0.0.53:53 上监听才说“已重新占用”并保持停止；:53 空闲就把 agent
 # 起回来（不然分流无声无息丢了）；被别的服务占着就如实说是谁占着。
-# 监听是具体地址（127.0.0.1:53、127.0.0.1:5353 等）时不冲突，直接起回来。
+# 监听是具体地址（127.0.0.1:53、127.0.0.1:5353 等）时：先按实际冲突分类
+# （V016-23）——地址就是 stub 的、或当前被别的进程挡住的，保持停止并明说；
+# 不冲突才起回来，起失败要明说分流已丢及恢复办法，并留待办标记。
 # 无 unit 的 agent 也走 restart_agent 的端口兜底分支（V016-09）。
 restore_agent_after() {
   if [ "$AGENT_WAS_ACTIVE" != 1 ]; then
@@ -505,12 +536,29 @@ restore_agent_after() {
       esac
       ;;
     *)
-      echo "agent 还原前在运行（监听 $AGENT_LISTEN），正在恢复..."
-      if restart_agent; then
-        echo "agent 已恢复运行（监听 $AGENT_LISTEN）。"
+      local _blockers=""
+      # 按实际冲突分类，不按监听字符串语法（V016-23）：
+      # 监听地址就是 stub 自己的地址（127.0.0.53/54:53）→ 起 agent 会直接抢
+      # 掉 stub，保持停止；监听地址当前被别的进程挡住 → 也保持停止并点名。
+      if _is_stub_host "$(_addr_host "$AGENT_LISTEN")" && [ "$(_addr_port "$AGENT_LISTEN")" = "53" ]; then
+        echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：该地址就是 systemd-resolved 的 stub 地址，agent 占了它会直接抢掉 stub。"
+        echo "如需继续用 agent 分流，请重跑安装脚本并改监听地址（例如 bash install.sh --dns-listen 127.0.0.1:53）；只想恢复系统 DNS 的话，现在已经好了。"
+        clear_pending_marker
+      elif _blockers=$(listen_blocked "$AGENT_LISTEN"); then
+        echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：该监听地址已被占（$_blockers），agent 绑不上。"
+        echo "如需继续用 agent 分流，请先处理占用的服务后重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
+        clear_pending_marker
       else
-        echo "警告: agent 恢复启动失败（监听 $AGENT_LISTEN），系统 DNS 不受影响；请看 journalctl -u dnsunlock-agent" >&2
-        write_pending_marker "$AGENT_LISTEN"
+        echo "agent 还原前在运行（监听 $AGENT_LISTEN），正在恢复..."
+        if restart_agent; then
+          echo "agent 已恢复运行（监听 $AGENT_LISTEN）。"
+        elif [ "$AGENT_NO_UNIT" = 1 ]; then
+          echo "警告: agent 恢复启动失败（监听 $AGENT_LISTEN），分流已停止；系统 DNS 不受影响。请手动运行 /usr/local/bin/dnsunlock dns-agent --config /etc/dnsunlock/config.json，或重跑安装脚本。" >&2
+          write_pending_marker "$AGENT_LISTEN"
+        else
+          echo "警告: agent 恢复启动失败（监听 $AGENT_LISTEN），分流已停止；系统 DNS 不受影响。请手动 systemctl start dnsunlock-agent，或重跑安装脚本；详情见 journalctl -u dnsunlock-agent。" >&2
+          write_pending_marker "$AGENT_LISTEN"
+        fi
       fi
       ;;
   esac
