@@ -215,7 +215,11 @@ func TestPktinfoLiveKernelOOB(t *testing.T) {
 		t.Fatalf("dial 127.0.0.2: %v", err)
 	}
 	defer cli.Close()
-	if _, err := cli.Write(buildQuery("example.com")); err != nil {
+	q0, _, err := buildQuery("example.com")
+	if err != nil {
+		t.Fatalf("buildQuery: %v", err)
+	}
+	if _, err := cli.Write(q0); err != nil {
 		t.Fatalf("client write: %v", err)
 	}
 	_ = srv.SetReadDeadline(time.Now().Add(5 * time.Second))
@@ -300,7 +304,10 @@ func TestServeUDPLiveReplySource(t *testing.T) {
 		t.Fatalf("dial 127.0.0.2:%d: %v", port, err)
 	}
 	defer cli.Close()
-	q := buildQuery("tiktok.com")
+	q, qid, err := buildQuery("tiktok.com")
+	if err != nil {
+		t.Fatalf("buildQuery: %v", err)
+	}
 	if _, err := cli.Write(q); err != nil {
 		t.Fatalf("client write: %v", err)
 	}
@@ -324,7 +331,7 @@ func TestServeUDPLiveReplySource(t *testing.T) {
 	if src == nil || src.IP == nil || !src.IP.Equal(net.ParseIP("127.0.0.2")) {
 		t.Fatalf("reply source = %v, want 127.0.0.2 (pktinfo must force the queried address)", src)
 	}
-	ip, err := parseAnswerA(rbuf[:n])
+	ip, err := parseAnswerA(rbuf[:n], qid)
 	if err != nil {
 		t.Fatalf("parse reply: %v", err)
 	}

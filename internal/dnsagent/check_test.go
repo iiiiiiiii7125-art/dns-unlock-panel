@@ -14,6 +14,74 @@ import (
 	"dnsunlock/internal/model"
 )
 
+// TestBuildQueryRandomIDAndLabelChecks (V016-31): the hand-written DNS
+// client must use a random query ID (never the fixed 0x1234), and must
+// refuse labels over 63 bytes instead of wrapping their length byte.
+func TestBuildQueryRandomIDAndLabelChecks(t *testing.T) {
+	q1, id1, err := buildQuery("www.netflix.com")
+	if err != nil {
+		t.Fatalf("buildQuery: %v", err)
+	}
+	if len(q1) < 12 || q1[0] != byte(id1>>8) || q1[1] != byte(id1) {
+		t.Fatalf("query ID bytes %v do not match returned id 0x%04x", q1[:2], id1)
+	}
+	if id1 == 0x1234 {
+		t.Fatalf("query ID is the fixed 0x1234")
+	}
+	seen := map[uint16]bool{id1: true}
+	for i := 0; i < 16; i++ {
+		_, id, err := buildQuery("www.netflix.com")
+		if err != nil {
+			t.Fatalf("buildQuery: %v", err)
+		}
+		if seen[id] {
+			t.Fatalf("duplicate query ID 0x%04x in 17 builds (IDs must be random)", id)
+		}
+		seen[id] = true
+	}
+	long := strings.Repeat("a", 64) + ".example.com"
+	if _, _, err := buildQuery(long); err == nil {
+		t.Fatalf("buildQuery(64-byte label) = no error, want label-too-long error")
+	}
+	huge := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 63) + ".com"
+	if _, _, err := buildQuery(huge); err == nil {
+		t.Fatalf("buildQuery(%d-byte domain) = no error, want domain-too-long error", len(huge))
+	}
+}
+
+// TestParseAnswerAValidatesIDAndRcode (V016-31): a response with the
+// wrong transaction ID or a non-zero RCODE must be rejected, not
+// silently accepted as an answer.
+func TestParseAnswerAValidatesIDAndRcode(t *testing.T) {
+	q, id, err := buildQuery("www.netflix.com")
+	if err != nil {
+		t.Fatalf("buildQuery: %v", err)
+	}
+	qq, ok := parseQuestion(q)
+	if !ok {
+		t.Fatalf("parseQuestion of own query failed")
+	}
+	resp := buildResponse(q, qq, net.ParseIP("203.0.113.20"))
+	if ip, err := parseAnswerA(resp, id); err != nil || !ip.Equal(net.ParseIP("203.0.113.20")) {
+		t.Fatalf("parseAnswerA(matching ID) = %v, %v want 203.0.113.20, nil", ip, err)
+	}
+	wrongID := append([]byte(nil), resp...)
+	wrongID[0] ^= 0xff
+	if _, err := parseAnswerA(wrongID, id); err == nil {
+		t.Fatalf("parseAnswerA(wrong ID) = no error, want ID mismatch error")
+	}
+	servfail := append([]byte(nil), resp...)
+	servfail[3] |= 0x02 // RCODE=SERVFAIL
+	if _, err := parseAnswerA(servfail, id); err == nil {
+		t.Fatalf("parseAnswerA(RCODE=SERVFAIL) = no error, want RCODE error")
+	}
+	nxdomain := append([]byte(nil), resp...)
+	nxdomain[3] |= 0x03 // RCODE=NXDOMAIN
+	if _, err := parseAnswerA(nxdomain, id); err == nil {
+		t.Fatalf("parseAnswerA(RCODE=NXDOMAIN) = no error, want RCODE error")
+	}
+}
+
 func TestCheckLineFormat(t *testing.T) {
 	ok := CheckResult{PlatformID: "netflix", Domain: "www.netflix.com", ResolvedIP: "203.0.113.20", OK: true, LatencyMs: 12}
 	if got := ok.Line(); got != "netflix\twww.netflix.com\t203.0.113.20\tOK\t12" {

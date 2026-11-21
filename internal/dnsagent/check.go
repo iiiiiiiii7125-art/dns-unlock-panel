@@ -17,6 +17,8 @@ package dnsagent
 // "we could not even load the config/rules").
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"strconv"
@@ -52,22 +54,43 @@ func (r CheckResult) Line() string {
 }
 
 // buildQuery builds a minimal DNS A query (RD set, one question).
-func buildQuery(domain string) []byte {
+// V016-31: the transaction ID is random per query (never the old fixed
+// 0x1234), and over-long labels / domains are rejected instead of
+// wrapping the length byte. Returns the packet, its ID, and an error.
+func buildQuery(domain string) ([]byte, uint16, error) {
+	var idb [2]byte
+	if _, err := rand.Read(idb[:]); err != nil {
+		return nil, 0, fmt.Errorf("random query ID: %w", err)
+	}
+	id := binary.BigEndian.Uint16(idb[:])
+	domain = strings.TrimSuffix(domain, ".")
+	if domain == "" {
+		return nil, 0, fmt.Errorf("empty domain")
+	}
+	if len(domain) > 253 {
+		return nil, 0, fmt.Errorf("domain too long: %d bytes (max 253)", len(domain))
+	}
 	var out []byte
-	out = append(out, 0x12, 0x34)       // ID
-	out = append(out, 0x01, 0x00)       // RD
-	out = append(out, 0x00, 0x01)       // QDCOUNT=1
-	out = append(out, 0x00, 0x00)       // ANCOUNT
-	out = append(out, 0x00, 0x00)       // NSCOUNT
-	out = append(out, 0x00, 0x00)       // ARCOUNT
-	for _, l := range strings.Split(strings.TrimSuffix(domain, "."), ".") {
+	out = append(out, idb[0], idb[1]) // ID
+	out = append(out, 0x01, 0x00)     // RD
+	out = append(out, 0x00, 0x01)     // QDCOUNT=1
+	out = append(out, 0x00, 0x00)     // ANCOUNT
+	out = append(out, 0x00, 0x00)     // NSCOUNT
+	out = append(out, 0x00, 0x00)     // ARCOUNT
+	for _, l := range strings.Split(domain, ".") {
+		if len(l) == 0 {
+			return nil, 0, fmt.Errorf("empty label in domain %q", domain)
+		}
+		if len(l) > 63 {
+			return nil, 0, fmt.Errorf("label %q too long: %d bytes (max 63)", l, len(l))
+		}
 		out = append(out, byte(len(l)))
 		out = append(out, l...)
 	}
-	out = append(out, 0x00)             // root label
-	out = append(out, 0x00, 0x01)       // QTYPE A
-	out = append(out, 0x00, 0x01)       // QCLASS IN
-	return out
+	out = append(out, 0x00)       // root label
+	out = append(out, 0x00, 0x01) // QTYPE A
+	out = append(out, 0x00, 0x01) // QCLASS IN
+	return out, id, nil
 }
 
 // skipName advances past a (possibly compressed) domain name in pkt.
@@ -91,9 +114,17 @@ func skipName(pkt []byte, off int) (int, error) {
 }
 
 // parseAnswerA returns the first A record in a DNS response.
-func parseAnswerA(resp []byte) (net.IP, error) {
+// V016-31: the response must carry the query's own ID and RCODE 0;
+// anything else is rejected instead of being read as an answer.
+func parseAnswerA(resp []byte, wantID uint16) (net.IP, error) {
 	if len(resp) < 12 {
 		return nil, fmt.Errorf("response too short")
+	}
+	if id := binary.BigEndian.Uint16(resp[0:2]); id != wantID {
+		return nil, fmt.Errorf("response ID 0x%04x, want 0x%04x", id, wantID)
+	}
+	if rcode := resp[3] & 0x0F; rcode != 0 {
+		return nil, fmt.Errorf("DNS error rcode=%d", rcode)
 	}
 	an := int(resp[6])<<8 | int(resp[7])
 	if an == 0 {
@@ -137,7 +168,10 @@ func parseAnswerA(resp []byte) (net.IP, error) {
 // resolveVia asks one DNS server (host:port) for an A record, UDP first
 // with TCP fallback, reusing the agent's forwarders.
 func (a *Agent) resolveVia(addr, domain string) (string, error) {
-	pkt := buildQuery(domain)
+	pkt, id, err := buildQuery(domain)
+	if err != nil {
+		return "", err
+	}
 	resp := a.forwardUDP(addr, pkt)
 	if resp == nil {
 		resp = a.forwardTCP(addr, pkt)
@@ -145,7 +179,7 @@ func (a *Agent) resolveVia(addr, domain string) (string, error) {
 	if resp == nil {
 		return "", fmt.Errorf("no reply from DNS %s", addr)
 	}
-	ip, err := parseAnswerA(resp)
+	ip, err := parseAnswerA(resp, id)
 	if err != nil {
 		return "", err
 	}
