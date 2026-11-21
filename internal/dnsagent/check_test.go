@@ -158,6 +158,46 @@ func panelStub(t *testing.T, cfg model.AgentConfig) *httptest.Server {
 	}))
 }
 
+// TestRunCheckUnresolvableRuleFails (V016-16): a rule the panel kept
+// with an empty NodeIP (no node in its region, no default unlock IP)
+// must come out as a FAIL row — "no usable unlock IP" — never as an
+// OK row for the domain's real upstream IP, and never silently
+// skipped. Without this, check would report the unlock as working
+// when there is no unlock IP at all.
+func TestRunCheckUnresolvableRuleFails(t *testing.T) {
+	port := localTLSServer(t)
+	oldPort := probePort
+	probePort = strconv.Itoa(port)
+	t.Cleanup(func() { probePort = oldPort })
+
+	stub := dnsStub(t, "bbci.co.uk", "127.0.0.1")
+	upstream := stub.String() // answers the domain with 127.0.0.1 (real-IP path)
+	cfg := model.AgentConfig{Version: 1, Upstream: upstream, Rules: []model.AgentRule{
+		{PlatformID: "bbciplayer", Domains: []string{"bbci.co.uk"}, Region: "GB", NodeIP: ""},
+	}}
+	srv := panelStub(t, cfg)
+	defer srv.Close()
+
+	a := New(Config{Listen: "127.0.0.1:15353", PanelURL: srv.URL, Token: "t", ServerID: "srv-1"})
+	results, code, err := a.RunCheck("upstream")
+	if err != nil {
+		t.Fatalf("RunCheck err = %v want nil", err)
+	}
+	if code != 1 || len(results) != 1 {
+		t.Fatalf("RunCheck = %v,%d want 1 row, code 1", results, code)
+	}
+	row := results[0]
+	if row.OK || row.ResolvedIP != "" {
+		t.Fatalf("row = %+v want FAIL with no resolved IP", row)
+	}
+	if !strings.Contains(row.Err, "no usable unlock IP") {
+		t.Fatalf("row.Err = %q want it to name the missing unlock IP", row.Err)
+	}
+	if got := row.Line(); !strings.HasPrefix(got, "bbciplayer\tbbci.co.uk\t-\tFAIL\t") {
+		t.Fatalf("line = %q want bbciplayer FAIL row with '-' IP", got)
+	}
+}
+
 func TestRunCheckViaAgent(t *testing.T) {
 	port := localTLSServer(t)
 	oldPort := probePort

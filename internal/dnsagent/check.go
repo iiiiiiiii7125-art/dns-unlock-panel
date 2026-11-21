@@ -242,6 +242,27 @@ func (a *Agent) RunCheck(via string) ([]CheckResult, int, error) {
 			continue
 		}
 		row := CheckResult{PlatformID: r.PlatformID, Domain: r.Domains[0], LatencyMs: -1}
+		// V016-16: a rule the panel kept as unresolvable (no node in
+		// its region, no default unlock IP) gets its own FAIL row.
+		// Resolving it upstream instead would report the domain's
+		// real IP as OK and hide that there is no unlock IP at all.
+		if r.Mode == "nameserver" {
+			if r.Nameserver == "" {
+				row.Err = "nameserver not set for this rule"
+				results = append(results, row)
+				anyFail = true
+				continue
+			}
+		} else if net.ParseIP(r.NodeIP) == nil {
+			if r.Region != "" {
+				row.Err = fmt.Sprintf("no usable unlock IP for region %s", r.Region)
+			} else {
+				row.Err = "no usable unlock IP for this rule"
+			}
+			results = append(results, row)
+			anyFail = true
+			continue
+		}
 		ip, err := a.resolveVia(addr, row.Domain)
 		if err != nil {
 			row.Err = err.Error()

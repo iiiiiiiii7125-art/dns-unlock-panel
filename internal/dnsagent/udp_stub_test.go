@@ -340,6 +340,30 @@ func TestServeUDPLiveReplySource(t *testing.T) {
 	}
 }
 
+// TestRebuildDomainsSkipsUnresolvable (V016-16, serving half): a rule
+// the panel kept with an empty NodeIP must NOT enter the domain map —
+// its domains keep forwarding upstream exactly as before the panel
+// started keeping such rules (matching it would NODATA non-A queries
+// instead of forwarding them).
+func TestRebuildDomainsSkipsUnresolvable(t *testing.T) {
+	a := New(Config{Listen: "127.0.0.1:15353", Allowlist: []string{"127.0.0.1"}})
+	a.rulesMu.Lock()
+	a.rules = map[string]model.AgentRule{
+		"bbciplayer": {PlatformID: "bbciplayer", Domains: []string{"bbci.co.uk"}, Region: "GB", NodeIP: ""},
+		"netflix":    {PlatformID: "netflix", Domains: []string{"www.netflix.com"}, NodeIP: "203.0.113.20"},
+	}
+	a.rulesMu.Unlock()
+	a.mu.Lock()
+	a.rebuildDomainsLocked(a.rules)
+	a.mu.Unlock()
+	if _, ok := a.lookup("bbci.co.uk"); ok {
+		t.Fatalf("unresolvable rule matched lookup; its domain must keep forwarding upstream")
+	}
+	if _, ok := a.lookup("www.netflix.com"); !ok {
+		t.Fatalf("resolvable rule did not match lookup")
+	}
+}
+
 func TestServeUDPStarts(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("needs root to bind :53")

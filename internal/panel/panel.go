@@ -1426,9 +1426,11 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if rule.Mode == "nameserver" {
-			if rule.Nameserver == "" {
-				continue
-			}
+			// V016-16: keep even a nameserver rule with no upstream
+			// set (Nameserver "") so `dnsunlock check` can report it
+			// as FAIL instead of silently dropping the row; the
+			// agent skips unusable rules when serving DNS, so the
+			// domain keeps forwarding upstream as before.
 			cfg.Rules = append(cfg.Rules, model.AgentRule{
 				PlatformID: p.ID, Domains: kept, Mode: "nameserver",
 				Nameserver: rule.Nameserver, Region: rule.Region, Tier: p.Tier,
@@ -1444,9 +1446,13 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 				ip, nid, ok = defaultIP, "", true
 			}
 		}
-		if !ok || !validIP(ip) {
-			continue // no usable IP for that rule: leave platform on upstream
-		}
+		// V016-16: keep the rule even when no IP resolves for it
+		// (no node in the region, no CustomIP, no default unlock IP).
+		// The old `continue` dropped it entirely, so `dnsunlock
+		// check` printed NO_RULES for a platform the user plainly
+		// configured. An empty NodeIP marks it unresolvable; the
+		// agent skips such rules when serving DNS (the domain keeps
+		// forwarding upstream), and check reports it as FAIL.
 		cfg.Rules = append(cfg.Rules, model.AgentRule{
 			PlatformID: p.ID, Domains: kept,
 			NodeID: nid, NodeIP: ip, Region: rule.Region, Tier: p.Tier,

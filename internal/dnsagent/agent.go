@@ -549,6 +549,19 @@ func (a *Agent) rebuildDomainsLocked(rules map[string]model.AgentRule) {
 	})
 	domains := map[string]target{}
 	for _, r := range sorted {
+		// V016-16: skip rules the panel kept as unresolvable (empty
+		// NodeIP / empty Nameserver) when SERVING dns. They exist in
+		// the config so check/selftest can report them, but for
+		// resolution the domain must stay unmatched and forward
+		// upstream exactly as before the panel kept them — matching
+		// it with an empty IP would NODATA non-A queries instead.
+		if r.Mode == "nameserver" {
+			if r.Nameserver == "" {
+				continue
+			}
+		} else if net.ParseIP(r.NodeIP) == nil {
+			continue
+		}
 		for _, d := range r.Domains {
 			d = strings.ToLower(strings.TrimSuffix(d, "."))
 			if _, exists := domains[d]; exists {
