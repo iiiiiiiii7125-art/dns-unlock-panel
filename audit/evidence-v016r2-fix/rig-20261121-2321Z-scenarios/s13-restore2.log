@@ -1,0 +1,24 @@
+可用的备份（时间倒序）：
+  [1] 2026-11-21T23:32:00+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-233159_pre-restore
+  [2] 2026-11-21T23:31:36+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-233136_pre-takeover
+  [3] 2026-11-21T23:30:42+0000  pre-restore  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-233042_pre-restore
+  [4] 2026-11-21T23:30:20+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-233020_pre-restore
+  [5] 2026-11-21T23:30:12+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-233011_pre-takeover
+  [6] 2026-11-21T23:28:54+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-232854_pre-restore
+  [7] 2026-11-21T23:28:45+0000  pre-takeover  DNS: 1.1.1.1 1.0.0.1   /var/lib/dnsunlock/backup/20261121-232845_pre-takeover
+  [8] 2026-11-21T23:26:34+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-232634_pre-restore
+  [9] 2026-11-21T23:26:26+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-232626_pre-takeover
+  [10] 2026-11-21T23:25:50+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-232550_pre-restore
+  [11] 2026-11-21T23:25:02+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-232502_pre-takeover
+  [12] 2026-11-21T23:23:31+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-232331_pre-restore
+  [13] 2026-11-21T23:23:23+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-232323_pre-takeover
+  [14] 2026-11-21T23:22:41+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-232241_pre-takeover
+非交互模式：默认还原最早的一份（原始状态）: /var/lib/dnsunlock/backup/20261121-232241_pre-takeover
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261121-233205_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-233205_pre-restore
+从备份还原: /var/lib/dnsunlock/backup/20261121-232241_pre-takeover（pre-takeover，2026-11-21T23:22:41+0000）
+跳过 NM 重载（备份时未在跑或无 nmcli）
+跳过 resolvconf 重载（备份时未在跑）
+已还原 /etc/resolv.conf <- /var/lib/dnsunlock/backup/20261121-232241_pre-takeover/resolv.conf
+已还原并验证通过（getent hosts example.com 有结果）
+agent 还原前未在运行，保持停止（未改动）。

@@ -1,0 +1,13 @@
+baseline: 98e03ce merge: fix round 2 rig lane (R2-14/15, G-1/G-2)
+date: 2026-11-21T22:51:21Z
+cmd: go test ./...
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+?   	dnsunlock/cmd/dnsunlock	[no test files]
+ok  	dnsunlock/internal/dnsagent	17.017s
+?   	dnsunlock/internal/model	[no test files]
+ok  	dnsunlock/internal/panel	(cached)
+ok  	dnsunlock/internal/sniproxy	(cached)
+?   	dnsunlock/internal/store	[no test files]
+?   	dnsunlock/scripts/rig/bindhold	[no test files]
+?   	dnsunlock/scripts/rig/bindprobe	[no test files]
+go test exit=0

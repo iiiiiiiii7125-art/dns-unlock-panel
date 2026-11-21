@@ -1,0 +1,4 @@
+台架证据日志：/home/hatch/workspace/dns-unlock-panel-v016/audit/evidence-v016r2-fix/rig-20261121-2302Z.log（逐场景日志见 /home/hatch/workspace/dns-unlock-panel-v016/audit/evidence-v016r2-fix/rig-20261121-2302Z-scenarios）
+台架基线 commit: 98e03cef10ce876229a48f349be55719f5007921
+台架 rootfs 不存在: /var/lib/machines/v016-test
+逐场景日志已归档：/home/hatch/workspace/dns-unlock-panel-v016/audit/evidence-v016r2-fix/rig-20261121-2302Z-scenarios（0 个文件）

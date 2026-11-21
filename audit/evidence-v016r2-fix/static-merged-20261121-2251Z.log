@@ -1,0 +1,38 @@
+baseline: 98e03ce merge: fix round 2 rig lane (R2-14/15, G-1/G-2)
+date: 2026-11-21T22:51:49Z
+=== go vet ./... ===
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+go vet exit=0
+
+=== go test -count=1 ./... (forced fresh rerun) ===
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+?   	dnsunlock/cmd/dnsunlock	[no test files]
+ok  	dnsunlock/internal/dnsagent	17.792s
+?   	dnsunlock/internal/model	[no test files]
+ok  	dnsunlock/internal/panel	1.317s
+ok  	dnsunlock/internal/sniproxy	0.321s
+?   	dnsunlock/internal/store	[no test files]
+?   	dnsunlock/scripts/rig/bindhold	[no test files]
+?   	dnsunlock/scripts/rig/bindprobe	[no test files]
+go test -count=1 exit=0
+
+=== bash -n all scripts ===
+sweep: find . -name '*.sh' -not -path './.git/*' | bash -n each
+result: all true shell scripts PASS.
+note: scripts/sync-restore.sh FAILS bash -n because it is a Python script
+  (shebang #!/usr/bin/env python3, line 11 `ROOT = Path(__file__).resolve().parent.parent`);
+  python3 -m py_compile scripts/sync-restore.sh -> OK. Not a product defect.
+
+=== scripts/check-restore-sync.sh ===
+还原脚本双份来源一致（两份 install.sh 内嵌 == scripts/restore-resolv.sh，且两份 install.sh identical）
+exit=0
+
+=== inline JS syntax (node --check) ===
+web/index.html: 1 inline <script> block, 39445 chars -> node --check OK
+internal/panel/assets/index.html: same block (byte-identical file) -> node --check OK
+
+=== embedded assets byte-identity (cmp -s) ===
+web/index.html == internal/panel/assets/index.html (sha256 3814054ae7028865...)
+scripts/install.sh == internal/panel/assets/install.sh (sha256 780364acf0deda01...)
+data/platforms.json == internal/panel/assets/platforms.json (sha256 cc3e2110b96392d3...)
+all three IDENTICAL

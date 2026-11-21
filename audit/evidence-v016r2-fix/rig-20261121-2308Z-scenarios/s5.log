@@ -1,0 +1,87 @@
+监听地址 :53 可绑定。
+=== dnsunlock 安装 ===
+面板: http://127.0.0.1:18180
+  探测 http://127.0.0.1:8080 -> 不通（HTTP 000）
+  面板入口测速排名（并行探测，8 秒超时，最快在前）：
+    http://127.0.0.1:18180 -> HTTP 401，1 ms
+[0/6] 装前检查：面板连通性 + token...
+server_id: srv-1795302541636006222（token 验证通过）
+[1/6] 下载 dnsunlock-linux-amd64 ...
+dnsunlock-linux-amd64: OK
+sha256 校验通过
+[2/6] 写配置...
+[3/6] 启动服务（不自动放行防火墙 53，请按 allowlist 自行放行）...
+[4/6] 装后验证...
+  验证通过: example.com 能走上游解析（TCP；本机 UDP 解析不通，已自动走 TCP）
+  提示: 再测一条已设规则的域名，如 dig @127.0.0.1 -p 53 netflix.com A，应返回规则里配的解锁 IP（未设规则时走上游属正常）。
+--- 基线（接管前）：dnsunlock check --via upstream ---
+  chatgpt	openai.com	-	FAIL	no usable unlock IP for region US
+  claude	claude.ai	-	FAIL	no usable unlock IP for region US
+  disneyplus	disneyplus.com	-	FAIL	no usable unlock IP for region HK
+  gemini	gemini.google.com	-	FAIL	no usable unlock IP for region US
+  hbomax	hbomax.com	-	FAIL	no usable unlock IP for region US
+  hulu	hulu.com	-	FAIL	no usable unlock IP for region US
+  instagram	instagram.com	-	FAIL	no usable unlock IP for region US
+  netflix	netflix.com	-	FAIL	no usable unlock IP for region HK
+  primevideo	primevideo.com	-	FAIL	no usable unlock IP for region US
+  spotify	spotify.com	-	FAIL	no usable unlock IP for region US
+  tiktok	tiktok.com	198.18.246.195	OK	679
+  youtube-premium	youtube.com	-	FAIL	no usable unlock IP for region HK
+  bbciplayer	bbci.co.uk	-	FAIL	no usable unlock IP for region GB
+  crunchyroll	crunchyroll.com	-	FAIL	no usable unlock IP for region US
+  dazn	dazn.com	198.18.246.196	OK	386
+  youtube	youtu.be	-	FAIL	no usable unlock IP for region HK
+  警告: 基线（接管前）：有规则未通过（exit 1，见上表 FAIL 行），不致命，继续安装。
+
+=== 临时模式（--temp）：只把本次运行的 DNS 指到 agent，不做永久接管 ===
+传输探测: UDP 不通、TCP 通，将写 options use-vc
+临时模式：已直接写 /etc/resolv.conf（nameserver 127.0.0.1，不加 chattr 锁）。
+临时模式：已装开机清理 unit（dnsunlock-temp-restore.service），重启后自动恢复原 resolv.conf。
+临时模式说明：本次只改了运行时 DNS，没有永久备份、没有 chattr 锁、没有停任何管理器。
+重启后失效（resolved 重启 / DHCP 续租 / 管理器运行时也可能失效）。
+要永久生效：重跑安装并选接管（本机系统 DNS 设为 127.0.0.1）。
+要立即还原：运行 dnsunlock-restore-dns（按临时状态清理并恢复 DNS）；不要直接 systemctl restart systemd-resolved——agent 还占着 :53 时 resolved 会抢不到 stub。
+  系统解析验证通过: example.com -> 198.18.246.194（getent，走系统解析器）
+--- 复测（临时模式）：dnsunlock check --via agent ---
+  chatgpt	openai.com	-	FAIL	no usable unlock IP for region US
+  claude	claude.ai	-	FAIL	no usable unlock IP for region US
+  disneyplus	disneyplus.com	-	FAIL	no usable unlock IP for region HK
+  gemini	gemini.google.com	-	FAIL	no usable unlock IP for region US
+  hbomax	hbomax.com	-	FAIL	no usable unlock IP for region US
+  hulu	hulu.com	-	FAIL	no usable unlock IP for region US
+  instagram	instagram.com	-	FAIL	no usable unlock IP for region US
+  netflix	netflix.com	-	FAIL	no usable unlock IP for region HK
+  primevideo	primevideo.com	-	FAIL	no usable unlock IP for region US
+  spotify	spotify.com	-	FAIL	no usable unlock IP for region US
+  tiktok	tiktok.com	203.0.113.99	FAIL	TCP :443 / TLS handshake failed
+  youtube-premium	youtube.com	-	FAIL	no usable unlock IP for region HK
+  bbciplayer	bbci.co.uk	-	FAIL	no usable unlock IP for region GB
+  crunchyroll	crunchyroll.com	-	FAIL	no usable unlock IP for region US
+  dazn	dazn.com	203.0.113.99	FAIL	TCP :443 / TLS handshake failed
+  youtube	youtu.be	-	FAIL	no usable unlock IP for region HK
+  警告: 复测（临时模式）：有规则未通过（exit 1，见上表 FAIL 行），不致命，继续安装。
+=== 接管前后基线对比（基线 --via upstream → 复测 --via agent）===
+  期望：规则域名从上游 IP 变为规则 IP（状态 OK）；无规则的域名两次都走上游。
+  chatgpt openai.com: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  claude claude.ai: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  disneyplus disneyplus.com: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  gemini gemini.google.com: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  hbomax hbomax.com: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  hulu hulu.com: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  instagram instagram.com: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  netflix netflix.com: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  primevideo primevideo.com: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  spotify spotify.com: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  tiktok tiktok.com: 基线 198.18.246.195(OK) -> 复测 203.0.113.99(FAIL) [变化]
+  youtube-premium youtube.com: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  bbciplayer bbci.co.uk: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  crunchyroll crunchyroll.com: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+  dazn dazn.com: 基线 198.18.246.196(OK) -> 复测 203.0.113.99(FAIL) [变化]
+  youtube youtu.be: 基线 -(FAIL) -> 复测 -(FAIL) [一致]
+
+=== 安装完成 ===
+面板: http://127.0.0.1:18180  (分流规则改动后约 5 秒生效)
+DNS 监听: :53
+测试: dig @127.0.0.1 -p 53 netflix.com A    # 应返回规则里配的解锁 IP
+      dig @127.0.0.1 -p 53 example.com A    # 应返回真实上游 IP
+日志: journalctl -u dnsunlock-agent -f     # 注意: 无查询日志, 只有计数与探活
