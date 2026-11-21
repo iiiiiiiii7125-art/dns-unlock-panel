@@ -377,6 +377,9 @@ record_and_stop_agent_no_unit() {
 # 顺序（V016-02）：先读上次中止留下的待办标记，再按“冲突”检查 :53——
 # 只有会挡住 resolved stub 绑定的监听才算障碍（通配符 :53；resolved 自己
 # 的 stub 127.0.0.53:53 不算，agent 自己的通配符监听也不算，停后就没了）。
+# R2-04：冲突检查在 AGENT_WAS_ACTIVE 早返回之前——无论 agent 是否在跑都
+# 先查（与无 unit 路径对齐）；原先 agent 未在跑时直接 return，外来 :53
+# 占位发现不了，还原先改 resolv.conf、后验证失败才 exit 1，系统 DNS 死。
 # 检查到障碍时在停 agent 之前就中止（agent 不动）；停完仍有障碍时中止，
 # 但先把 agent 起回来（起不回来也要明说 + 留待办标记，下次重跑不再谎报
 # “还原前未在运行”）。停 agent 失败时 agent 还在跑，不用恢复。
@@ -397,7 +400,6 @@ record_and_stop_agent() {
     _running_now=1
     clear_pending_marker
   fi
-  [ "$AGENT_WAS_ACTIVE" = 1 ] || return 0
   AGENT_LISTEN=$(agent_listen_from_config)
   if [ ! -f /etc/dnsunlock/config.json ] && [ -n "$_pending" ]; then AGENT_LISTEN="$_pending"; fi
   # 停之前先检查：有没有停完也不会消失的、会挡 stub 的监听。
@@ -405,6 +407,7 @@ record_and_stop_agent() {
     echo "错误: :53 上已有其他服务监听（$_blockers），重启 systemd-resolved 会抢不到 stub，还原已中止（agent 未动，系统 DNS 未改；只写了一份还原前备份 ${PRE_RESTORE_BACKUP:-（见 /var/lib/dnsunlock/backup/ 下最新一份）}）；请先处理占 :53 的服务后重跑" >&2
     exit 1
   fi
+  [ "$AGENT_WAS_ACTIVE" = 1 ] || return 0
   if [ "$_running_now" = 1 ]; then
     echo "还原前 agent 在运行（监听 $AGENT_LISTEN），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）..."
     if ! systemctl stop "$AGENT_UNIT" 2>/dev/null; then
