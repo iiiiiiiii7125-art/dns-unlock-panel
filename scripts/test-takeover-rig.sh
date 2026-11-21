@@ -132,8 +132,8 @@ cp scripts/rig/rig-inner.sh "$RIG/rig-inner.sh"
 cp scripts/rig/stubs/* "$RIG/stubs/"
 cp scripts/rig/fixtures/* "$RIG/fixtures/"
 cp dist/dnsunlock-linux-amd64 "$RIG/bin/dnsunlock"
-"$GO" build -trimpath -o "$RIG/bin/bindprobe" ./scripts/rig/bindprobe.go
-"$GO" build -trimpath -o "$RIG/bin/bindhold" ./scripts/rig/bindhold.go
+"$GO" build -trimpath -o "$RIG/bin/bindprobe" ./scripts/rig/bindprobe
+"$GO" build -trimpath -o "$RIG/bin/bindhold" ./scripts/rig/bindhold
 chmod +x "$RIG"/stubs/* "$RIG/bin/"* "$RIG/rig-inner.sh"
 cp "$ROOT/etc/nsswitch.conf" "$RIG/fixtures/nsswitch.base"
 # chroot 内验证 panel 可达（共用宿主网络，127.0.0.1:18080 应通）
