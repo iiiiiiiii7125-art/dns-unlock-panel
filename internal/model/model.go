@@ -160,6 +160,15 @@ type Rule struct {
 	// only marks the node red in the panel; the rule is untouched.
 	BackupIP     string `json:"backup_ip,omitempty"`
 	AutoFailover bool   `json:"auto_failover,omitempty"`
+	// PreferFastest: when the rule names a region with several enabled
+	// nodes, pick the healthy node with the lowest probe latency
+	// instead of the first online one. Default off, on purpose:
+	// explicit choice wins — probe latency measures the agent-to-node
+	// probe path, not the real streaming path, and auto-switching
+	// regions would silently void the region the user picked by hand.
+	// It only changes the INITIAL pick; AutoFailover (fault switching)
+	// is untouched and still governs what happens when the pick dies.
+	PreferFastest bool `json:"prefer_fastest,omitempty"`
 	// Mode: "address" (默认) = DNS 直接返回解锁 IP;
 	// "nameserver" = 把该平台的查询转发到 Nameserver 指定的上游 DNS
 	// (如某解锁服务提供的专用 DNS IP)，不改写答案。
@@ -213,10 +222,28 @@ type AgentRule struct {
 	// BackupIP/AutoFailover are honoured only when AutoFailover is true.
 	BackupIP     string `json:"backup_ip,omitempty"`
 	AutoFailover bool   `json:"auto_failover,omitempty"`
+	// PreferFastest: see Rule.PreferFastest. Only an initial pick; the
+	// agent re-picks from Candidates on every 30s health cycle, and
+	// AutoFailover still owns fault switching. Default false.
+	PreferFastest bool `json:"prefer_fastest,omitempty"`
+	// Candidates: enabled nodes in the rule's region (region rules
+	// only), so the agent can re-pick the fastest healthy one from its
+	// own probe data instead of trusting the panel's stored latency.
+	Candidates []NodeCandidate `json:"candidates,omitempty"`
 	// Mode "address" (default) or "nameserver"; Nameserver is the upstream
 	// DNS IP used in nameserver mode (answer is relayed, not rewritten).
 	Mode       string `json:"mode,omitempty"`
 	Nameserver string `json:"nameserver,omitempty"`
+}
+
+// NodeCandidate is one region node the agent may pick from when a rule
+// has PreferFastest on. LatencyMs is the panel's last stored probe
+// latency (-1 = failed/unknown); Status is online/offline/unknown.
+type NodeCandidate struct {
+	NodeID    string `json:"node_id"`
+	NodeIP    string `json:"node_ip"`
+	LatencyMs int64  `json:"latency_ms"`
+	Status    string `json:"status"`
 }
 
 // AgentHeartbeat is posted by dns-agent; carries health only, never queries.

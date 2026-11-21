@@ -314,6 +314,24 @@ func resolveIP(nodes []model.Node, r model.Rule) (string, string, bool) {
 		return r.CustomIP, "", true
 	}
 	if r.Region != "" {
+		// PreferFastest: lowest-latency ONLINE node in the region wins
+		// the initial pick (LatencyMs comes from the agent's 30s probes,
+		// stored on the node by heartbeat). No online node with a
+		// measured latency -> fall through to the normal first-online
+		// pick below, never to a node already known dead.
+		if r.PreferFastest {
+			best := -1
+			for i, n := range nodes {
+				if n.Region == r.Region && n.Enabled && n.Status == "online" && n.LatencyMs >= 0 {
+					if best < 0 || n.LatencyMs < nodes[best].LatencyMs {
+						best = i
+					}
+				}
+			}
+			if best >= 0 {
+				return nodes[best].IP, nodes[best].ID, true
+			}
+		}
 		var fallback *model.Node
 		for i, n := range nodes {
 			if n.Region == r.Region && n.Enabled {
@@ -330,6 +348,23 @@ func resolveIP(nodes []model.Node, r model.Rule) (string, string, bool) {
 		}
 	}
 	return "", "", false
+}
+
+// regionCandidates lists the enabled nodes in a region rule's region so
+// the agent can re-pick the fastest healthy one from its own probe data.
+// Only for region-only rules (explicit NodeID/CustomIP already pin one IP,
+// nameserver rules have no node IP at all). Empty = no choice to make.
+func regionCandidates(nodes []model.Node, r model.Rule) []model.NodeCandidate {
+	if r.Region == "" || r.NodeID != "" || r.CustomIP != "" || r.Mode == "nameserver" {
+		return nil
+	}
+	var out []model.NodeCandidate
+	for _, n := range nodes {
+		if n.Region == r.Region && n.Enabled {
+			out = append(out, model.NodeCandidate{NodeID: n.ID, NodeIP: n.IP, LatencyMs: n.LatencyMs, Status: n.Status})
+		}
+	}
+	return out
 }
 
 func (s *Server) Handler() http.Handler {
@@ -840,12 +875,13 @@ func (s *Server) domainConflict(snap store.Data, plat model.Platform, body struc
 	CustomIP     string `json:"custom_ip"`
 	BackupIP     string `json:"backup_ip"`
 	AutoFailover bool   `json:"auto_failover"`
+	PreferFastest bool  `json:"prefer_fastest"`
 	Mode         string `json:"mode"`
 	Nameserver   string `json:"nameserver"`
 	ServerID     string `json:"server_id"`
 	Force        bool   `json:"force"`
 }) string {
-	newRule := model.Rule{PlatformID: body.PlatformID, NodeID: body.NodeID, Region: body.Region, CustomIP: body.CustomIP, Mode: body.Mode, Nameserver: body.Nameserver}
+	newRule := model.Rule{PlatformID: body.PlatformID, NodeID: body.NodeID, Region: body.Region, CustomIP: body.CustomIP, PreferFastest: body.PreferFastest, Mode: body.Mode, Nameserver: body.Nameserver}
 	newIP, _, newOK := resolveIP(snap.Nodes, newRule)
 	if body.Mode == "nameserver" {
 		newIP = "nameserver:" + body.Nameserver
@@ -945,6 +981,7 @@ func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
 			CustomIP     string `json:"custom_ip"`
 			BackupIP     string `json:"backup_ip"`
 			AutoFailover bool   `json:"auto_failover"`
+			PreferFastest bool  `json:"prefer_fastest"`
 			Mode         string `json:"mode"`
 			Nameserver   string `json:"nameserver"`
 			ServerID     string `json:"server_id"`
@@ -1013,7 +1050,7 @@ func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "cleared": true})
 			return
 		}
-		rule := model.Rule{PlatformID: body.PlatformID, NodeID: body.NodeID, Region: body.Region, CustomIP: body.CustomIP, BackupIP: body.BackupIP, AutoFailover: body.AutoFailover, Mode: body.Mode, Nameserver: body.Nameserver}
+		rule := model.Rule{PlatformID: body.PlatformID, NodeID: body.NodeID, Region: body.Region, CustomIP: body.CustomIP, BackupIP: body.BackupIP, AutoFailover: body.AutoFailover, PreferFastest: body.PreferFastest, Mode: body.Mode, Nameserver: body.Nameserver}
 		sid := body.ServerID
 		if sid == "" {
 			sid = serverID
@@ -1372,6 +1409,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 			PlatformID: p.ID, Domains: kept,
 			NodeID: nid, NodeIP: ip, Region: rule.Region, Tier: p.Tier,
 			BackupIP: rule.BackupIP, AutoFailover: rule.AutoFailover,
+			PreferFastest: rule.PreferFastest, Candidates: regionCandidates(snap.Nodes, rule),
 		})
 	}
 	// Mark server seen.

@@ -354,19 +354,24 @@ func (a *Agent) fetchConfig() error {
 			}
 			return sorted[i].PlatformID < sorted[j].PlatformID
 		})
-		domains := map[string]target{}
 		rules := map[string]model.AgentRule{}
 		for _, r := range sorted {
-			rules[r.PlatformID] = r
-			for _, d := range r.Domains {
-				d = strings.ToLower(strings.TrimSuffix(d, "."))
-				if _, exists := domains[d]; exists {
-					continue
+			// PreferFastest: initial pick only. The panel already
+			// resolved NodeIP to its fastest stored node; the agent
+			// re-picks here from its own live probe data, and again
+			// after every 30s health cycle (refreshFastest). This
+			// never touches AutoFailover: a failover override still
+			// wins in lookup(), and failback still returns to this
+			// (effective) primary when it recovers.
+			if r.PreferFastest && len(r.Candidates) > 0 {
+				if fast, ok := a.pickFastest(r); ok && fast != r.NodeIP {
+					fmt.Printf("[agent] prefer-fastest: %s %s -> %s (lowest probe latency in %s)\n", r.PlatformID, r.NodeIP, fast, r.Region)
+					r.NodeIP = fast
 				}
-				domains[d] = target{ip: r.NodeIP, platform: r.PlatformID, mode: r.Mode, ns: r.Nameserver}
 			}
+			rules[r.PlatformID] = r
 		}
-		a.domains = domains
+		a.rebuildDomainsLocked(rules)
 		a.rulesMu.Lock()
 		oldRules := a.rules
 		a.rules = rules
@@ -399,6 +404,102 @@ func (a *Agent) fetchConfig() error {
 	return nil
 }
 
+// rebuildDomainsLocked rebuilds the domain->target map from rules.
+// Caller must hold a.mu (write). Tier order decides shared domains
+// (P1-02): lowest tier wins, first platform wins a shared domain.
+func (a *Agent) rebuildDomainsLocked(rules map[string]model.AgentRule) {
+	sorted := make([]model.AgentRule, 0, len(rules))
+	for _, r := range rules {
+		sorted = append(sorted, r)
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Tier != sorted[j].Tier {
+			return sorted[i].Tier < sorted[j].Tier
+		}
+		return sorted[i].PlatformID < sorted[j].PlatformID
+	})
+	domains := map[string]target{}
+	for _, r := range sorted {
+		for _, d := range r.Domains {
+			d = strings.ToLower(strings.TrimSuffix(d, "."))
+			if _, exists := domains[d]; exists {
+				continue
+			}
+			domains[d] = target{ip: r.NodeIP, platform: r.PlatformID, mode: r.Mode, ns: r.Nameserver}
+		}
+	}
+	a.domains = domains
+}
+
+// pickFastest returns the lowest-latency healthy candidate IP for a
+// PreferFastest rule, using the agent's own probe data (health map) when
+// any candidate has been probed, else the panel's stored LatencyMs.
+// It returns ok=false when no candidate is usable: no probed candidate
+// is online, or no latency is known at all — the caller then keeps the
+// panel-resolved NodeIP instead of picking a node known to be dead.
+func (a *Agent) pickFastest(r model.AgentRule) (string, bool) {
+	a.healthMu.Lock()
+	defer a.healthMu.Unlock()
+	probed := false
+	bestIP := ""
+	var bestLat int64
+	for _, c := range r.Candidates {
+		if h, ok := a.health[c.NodeIP]; ok {
+			probed = true
+			if h.status == "online" && h.latency >= 0 && (bestIP == "" || h.latency < bestLat) {
+				bestIP, bestLat = c.NodeIP, h.latency
+			}
+		}
+	}
+	if probed {
+		return bestIP, bestIP != ""
+	}
+	for _, c := range r.Candidates {
+		// Panel-side fallback: a node the panel already knows is
+		// offline must not win on a stale low latency either.
+		if c.Status == "offline" {
+			continue
+		}
+		if c.LatencyMs >= 0 && (bestIP == "" || c.LatencyMs < bestLat) {
+			bestIP, bestLat = c.NodeIP, c.LatencyMs
+		}
+	}
+	return bestIP, bestIP != ""
+}
+
+// refreshFastest re-picks the fastest healthy node for PreferFastest
+// rules after each 30s health cycle, from fresh probe data. It is an
+// INITIAL-choice refresh only: a platform with an active failover
+// override is skipped, so AutoFailover keeps owning the switch until
+// the primary recovers (failback), and this never overrides it.
+func (a *Agent) refreshFastest() {
+	a.overrideMu.Lock()
+	overridden := map[string]bool{}
+	for pid := range a.override {
+		overridden[pid] = true
+	}
+	a.overrideMu.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.rulesMu.Lock()
+	defer a.rulesMu.Unlock()
+	changed := false
+	for pid, r := range a.rules {
+		if !r.PreferFastest || len(r.Candidates) == 0 || overridden[pid] {
+			continue
+		}
+		if fast, ok := a.pickFastest(r); ok && fast != r.NodeIP {
+			fmt.Printf("[agent] prefer-fastest: %s %s -> %s (probe latency changed)\n", pid, r.NodeIP, fast)
+			r.NodeIP = fast
+			a.rules[pid] = r
+			changed = true
+		}
+	}
+	if changed {
+		a.rebuildDomainsLocked(a.rules)
+	}
+}
+
 func (a *Agent) pollLoop(stop <-chan struct{}) {
 	t := time.NewTicker(5 * time.Second)
 	defer t.Stop()
@@ -426,7 +527,10 @@ func (a *Agent) pollLoop(stop <-chan struct{}) {
 // healthLoop probes each distinct unlock IP on TCP :443 every 30s.
 // A failed probe only updates status (reported to the panel, shown red).
 // Automatic rule changes happen ONLY via failoverToBackup, and only for
-// rules where the user explicitly enabled AutoFailover with a BackupIP.
+// rules where the user explicitly enabled AutoFailover with a BackupIP —
+// except PreferFastest, which only re-picks the INITIAL node choice from
+// fresh probe data and never overrides an active failover (see
+// refreshFastest).
 func (a *Agent) healthLoop(stop <-chan struct{}) {
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
@@ -529,6 +633,9 @@ func (a *Agent) checkHealth() {
 			a.overrideMu.Unlock()
 		}
 	}
+	// PreferFastest re-pick from the fresh probe data (initial choice
+	// only — platforms under a failover override are skipped inside).
+	a.refreshFastest()
 }
 
 // failoverToBackup switches ONE opted-in rule to its backup IP.
