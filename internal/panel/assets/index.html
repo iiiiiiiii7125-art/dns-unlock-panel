@@ -25,20 +25,43 @@ code{background:#f3f4f6;padding:2px 6px;border-radius:4px;word-break:break-all}
 #login{max-width:420px;margin:80px auto}
 .hidden{display:none}
 input[type=checkbox]{width:auto}
-/* 热门服务卡片（AKDNS 配置服务式）：logo + 名称 + 地区角标 + 状态行，选中蓝边 */
-.hot-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;max-height:360px;overflow-y:auto;padding:2px}
+/* 热门服务卡片（照抄 AKDNS 配置服务弹窗）：6 列；左侧 logo 色块，右侧名称 + 状态行；
+   已开启蓝边 + 浅蓝底 + 左上角地区小旗；未开启灰边 + “未开启”；名称过长截断省略号 */
+.hot-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;max-height:360px;overflow-y:auto;padding:2px}
+@media(max-width:1100px){.hot-grid{grid-template-columns:repeat(5,1fr)}}
 @media(max-width:900px){.hot-grid{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:700px){.hot-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:480px){.hot-grid{grid-template-columns:repeat(2,1fr)}}
-.hot-card{position:relative;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 8px 10px;cursor:pointer;text-align:center}
+.hot-card{position:relative;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px;cursor:pointer;display:flex;gap:10px;align-items:center;text-align:left}
 .hot-card:hover{border-color:#9ca3af}
-.hot-card.sel{border:2px solid #2563eb;background:#eff6ff;padding:11px 7px 9px}
-.hot-flag{position:absolute;top:8px;left:8px;font-size:11px;font-weight:700;background:#eef2ff;color:#3730a3;border-radius:99px;padding:1px 7px}
-.hot-logo{width:44px;height:44px;border-radius:12px;margin:2px auto 8px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#fff}
-.hot-name{font-weight:700;font-size:14px}
-.hot-zh{font-size:12px;color:#6b7280}
-.hot-status{font-size:12px;color:#6b7280;margin-top:4px;word-break:break-all}
+.hot-card.on{border-color:#2563eb;background:#eff6ff}
+.hot-card.sel{box-shadow:0 0 0 2px #2563eb}
+.hot-flag{position:absolute;top:6px;left:6px;font-size:11px;font-weight:700;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:99px;padding:1px 7px;z-index:1}
+.hot-pend{position:absolute;top:6px;right:6px;font-size:11px;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:99px;padding:1px 6px;z-index:1}
+.hot-logo{width:40px;height:40px;flex:none;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:700;color:#fff}
+.hot-text{flex:1;min-width:0}
+.hot-name{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hot-status{font-size:12px;color:#6b7280;margin-top:2px;word-break:break-all}
 .hot-status.on{color:#166534;font-weight:700}
+.hot-status.pend{color:#92400e;font-weight:700}
+/* 选择后端嵌套弹窗 + 底部操作栏（AKDNS 配置服务式） */
+#backendModal{position:fixed;inset:0;background:rgba(17,24,39,.45);display:flex;align-items:center;justify-content:center;z-index:60}
+#backendModal.hidden{display:none}
+.modal-box{background:#fff;border-radius:12px;padding:18px;width:560px;max-width:94vw;max-height:86vh;overflow-y:auto}
+.backend-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:14px 0}
+@media(max-width:560px){.backend-grid{grid-template-columns:repeat(3,1fr)}}
+.backend-opt{border:1px solid #d1d5db;border-radius:8px;padding:10px 4px;text-align:center;cursor:pointer}
+.backend-opt:hover{border-color:#9ca3af}
+.backend-opt.sel{border:2px solid #2563eb;background:#eff6ff;padding:9px 3px}
+.backend-opt b{font-size:14px}
+.backend-opt span{font-size:12px;color:#6b7280}
+.btn-blue{background:#2563eb;border-color:#2563eb}
+.btn-off-sel{border:2px solid #2563eb !important;background:#eff6ff}
+.btn-danger-o{background:#fff;color:#dc2626;border-color:#dc2626}
+#ruleBar{position:sticky;bottom:0;background:#fff;border-top:1px solid #e5e7eb;padding:12px 0 4px;display:flex;gap:8px;align-items:center;margin-top:14px;z-index:5}
+.set-chip.pend-chip{background:#fffbeb;border-color:#fcd34d;color:#92400e}
+#q:focus{border-color:#2563eb;outline:none;box-shadow:0 0 0 2px #bfdbfe}
+#ruleNote:focus{border-color:#2563eb;outline:none;box-shadow:0 0 0 2px #bfdbfe}
 #cardEditor{border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;padding:14px;margin-top:12px}
 .set-chip{display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:99px;padding:4px 10px;font-size:13px;cursor:pointer}
 #rulesBody td{padding:12px 10px}
@@ -84,7 +107,12 @@ input[type=checkbox]{width:auto}
   <div id="pane-rules" class="card">
     <h2>分流规则 <span class="muted">— 每个平台选一个解锁 IP，保存后 5 秒内生效</span></h2>
     <div class="row">
-      <input id="q" placeholder="搜索平台，如 netflix / 奈飞 / chatgpt" style="flex:1" oninput="onFilter()">
+      <input id="ruleNote" placeholder="备注（最多 10 个字符）" maxlength="10" style="flex:1">
+      <button onclick="saveNote()">保存备注</button>
+      <span class="muted">仅保存在本机浏览器，换电脑就没了</span>
+    </div>
+    <div class="row">
+      <div style="flex:1;position:relative;display:flex"><input id="q" placeholder="搜索平台，如 netflix / 奈飞 / chatgpt" style="flex:1;padding-right:30px" oninput="onFilter()"><button id="qClear" class="ghost" style="display:none;position:absolute;right:4px;top:50%;transform:translateY(-50%);border:none;background:transparent;color:#6b7280;padding:2px 8px" onclick="clearSearch()" title="清除搜索">×</button></div>
       <select id="cat" onchange="onFilter()"><option value="">全部类别</option></select>
       <label><input type="checkbox" id="onlySet" onchange="onFilter()"> 只看已设置</label>
     </div>
@@ -99,13 +127,34 @@ input[type=checkbox]{width:auto}
       <button class="ghost" onclick="setCat('香港专区')">香港专区</button>
       <button class="ghost" onclick="setCat('其他')">其他</button>
     </div>
-    <h3 style="margin-bottom:8px">热门服务 <span class="muted">— 点一张卡片，下面直接改它的解锁设置；上面搜索框也能筛卡片</span></h3>
+    <h3 style="margin-bottom:8px">热门服务 <span class="muted">— 点一张卡片选出口节点，改完点底部“保存配置”才生效；上面搜索框也能筛卡片</span></h3>
     <div id="hotCards" class="hot-grid"></div>
     <div id="cardEditor" class="hidden"></div>
     <div class="row" id="setStrip" style="margin-top:12px"></div>
     <h3>全部平台 <span class="muted">— 长尾平台在这里改，和卡片是同一套规则</span></h3>
     <table><thead><tr><th>平台</th><th>类别</th><th>模式 / 地区</th><th>解锁 IP（下拉选已有 / 直接手填）</th><th>备用与自动切换</th><th>当前生效 IP</th><th></th></tr></thead>
     <tbody id="rulesBody"></tbody></table>
+    <div id="ruleBar">
+      <button class="btn-danger-o" onclick="clearAllRules()">删除</button>
+      <button class="ghost" onclick="exportRules()">导出</button>
+      <button class="ghost" onclick="importRules()">导入</button>
+      <span style="flex:1"></span>
+      <span id="pendCount" class="muted"></span>
+      <button class="btn-blue" id="saveAllBtn" onclick="saveAllPending()">保存配置</button>
+      <input type="file" id="importFile" accept=".json,application/json" class="hidden" onchange="onImportFile(event)">
+    </div>
+  </div>
+
+  <div id="backendModal" class="hidden" onclick="if(event.target===this)closeBackend()">
+    <div class="modal-box">
+      <div class="row" style="justify-content:space-between;margin-bottom:0"><b style="font-size:16px">选择后端</b><button class="ghost" onclick="closeBackend()">✕</button></div>
+      <p class="muted" id="backendSub" style="margin:4px 0 0"></p>
+      <div id="backendOpts" class="backend-grid"></div>
+      <div class="row" style="justify-content:space-between;margin-bottom:0">
+        <button class="ghost" id="backendOffBtn" onclick="backendOff()">不开启</button>
+        <button class="btn-blue" onclick="backendDone()">完成</button>
+      </div>
+    </div>
   </div>
 
   <div id="pane-nodes" class="card hidden">
@@ -215,7 +264,12 @@ async function init(){
   $('unlockCmd').textContent='curl -fsSL '+location.origin+'/install.sh | bash -s -- --unlock-node';
   const rs=$('n-region');rs.innerHTML=REGIONS.map(r=>`<option value="${r.code}">${r.name} (${r.code})</option>`).join('');
   await refresh();
+  loadNote();
 }
+// 备注没有后端接口：只存本机浏览器 localStorage，换电脑就没了——按钮旁边已写明。
+const NOTE_KEY='dnsunlock_rules_note';
+function loadNote(){try{$('ruleNote').value=localStorage.getItem(NOTE_KEY)||''}catch(e){}}
+function saveNote(){try{localStorage.setItem(NOTE_KEY,$('ruleNote').value)}catch(e){}toast('备注已保存在本机浏览器（换电脑就没了）')}
 // 轮询状态：只更新统计行；只有配置版本或在线数变了，才拉取数据并按哈希决定重绘。
 // 15 秒一次的轮询不再重建表格/下拉框，正在输入的内容和滚动位置不会丢。
 let lastCfg=-1,lastNodesOnline=-1,lastServersOnline=-1;
@@ -267,7 +321,8 @@ function nodeOptions(sel){return '<option value="">— 选择已有 IP —</opti
 function regionOptions(sel){return '<option value="">— 地区自动选 —</option>'+REGIONS.map(r=>`<option value="${r.code}" ${r.code===sel?'selected':''}>${r.name}</option>`).join('')}
 function regionName(code){const r=REGIONS.find(x=>x.code===code);return r?r.name:code}
 function setCat(c){$('cat').value=c;onFilter()}
-function onFilter(){renderRules();renderHot()}
+function onFilter(){$('qClear').style.display=$('q').value?'':'none';renderRules();renderHot()}
+function clearSearch(){$('q').value='';onFilter()}
 function rowPasses(r,q,cat,only){
   const p=r.platform;
   if(cat&&p.category!==cat)return false;
@@ -346,12 +401,29 @@ async function saveRule(pid){
 }
 async function clearRule(pid){await api('/api/v1/rules',{method:'PUT',body:JSON.stringify({platform_id:pid})});await refreshRulesOnly();updateRow(pid);toast('已清除')}
 // ---- 热门服务卡片（AKDNS 配置服务式） ----
+// 卡片网格的未保存改动（AKDNS 式批量保存）：PENDING[pid] = PUT body，
+// 或 {__clear:true} 表示暂存清除；只有底部“保存配置”才真正 PUT。
+let PENDING={};
+let BACKEND_PID='',BACKEND_SEL=null,BACKEND_P=null;
 const LOGO_COLORS=['#2563eb','#dc2626','#059669','#d97706','#7c3aed','#db2777','#0891b2','#65a30d'];
 function logoColor(id){let h=0;for(const c of id)h=(h*31+c.charCodeAt(0))>>>0;return LOGO_COLORS[h%LOGO_COLORS.length]}
 let SEL_PID='',lastEdJSON='';
+function effRule(r){
+  const pd=PENDING[r.platform.id];
+  if(pd&&pd.__clear)return null; // 暂存清除
+  if(pd)return pd;
+  return r.rule||{};
+}
+function cardOn(r){
+  const pd=PENDING[r.platform.id];
+  if(pd)return !pd.__clear;
+  return r.has_rule;
+}
 function cardStatus(r){
-  if(!r.has_rule)return '未开启';
-  const ru=r.rule||{};
+  const pd=PENDING[r.platform.id];
+  if(pd&&pd.__clear)return '待清除';
+  if(!cardOn(r))return '未开启';
+  const ru=effRule(r)||{};
   if(ru.mode==='nameserver')return 'nameserver · '+(ru.nameserver||'');
   return [ru.region?regionName(ru.region):'',r.resolved_ip||''].filter(Boolean).join(' · ')||'已设置';
 }
@@ -363,38 +435,91 @@ function hotList(){
 function renderHot(){
   const list=hotList();
   $('hotCards').innerHTML=list.map(r=>{
-    const p=r.platform,ru=r.rule||{};
-    const flag=r.has_rule&&ru.region?`<span class="hot-flag">${esc(ru.region)}</span>`:'';
-    return `<div class="hot-card ${SEL_PID===p.id?'sel':''}" onclick="selectCard('${p.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter')selectCard('${p.id}')">
-      ${flag}<div class="hot-logo" style="background:${logoColor(p.id)}">${esc(p.name.charAt(0))}</div>
-      <div class="hot-name">${esc(p.name)}</div><div class="hot-zh">${esc(p.name_zh)}</div>
-      <div class="hot-status ${r.has_rule?'on':''}">${esc(cardStatus(r))}</div></div>`;
+    const p=r.platform,ru=effRule(r)||{};
+    const on=cardOn(r);
+    const flag=on&&ru.region?`<span class="hot-flag">${esc(ru.region)}</span>`:'';
+    const pend=PENDING[p.id]?`<span class="hot-pend">未保存</span>`:'';
+    return `<div class="hot-card ${on?'on':''} ${SEL_PID===p.id?'sel':''}" onclick="selectCard('${p.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter')selectCard('${p.id}')">
+      ${flag}${pend}<div class="hot-logo" style="background:${logoColor(p.id)}">${esc(p.name.charAt(0))}</div>
+      <div class="hot-text"><div class="hot-name" title="${esc(p.name)} · ${esc(p.name_zh)}">${esc(p.name)}</div>
+      <div class="hot-status ${on?'on':''} ${PENDING[p.id]?'pend':''}">${esc(cardStatus(r))}</div></div></div>`;
   }).join('')||'<p class="muted">没有匹配的热门服务</p>';
   const set=RULES.filter(r=>r.has_rule);
   $('setStrip').innerHTML='<span class="muted">已设置（'+set.length+'）：</span>'+(set.map(r=>{
     const p=r.platform,ru=r.rule||{};
     const lbl=ru.region?regionName(ru.region):(ru.custom_ip||ru.nameserver||'');
     return `<span class="set-chip" onclick="gotoRow('${p.id}')">${esc(p.name)} · ${esc(lbl)}</span>`;
-  }).join('')||'<span class="muted">还没有设置任何规则</span>');
+  }).join('')||'<span class="muted">还没有设置任何规则</span>')
+  +Object.keys(PENDING).map(pid=>{
+    const r=RULES.find(x=>x.platform.id===pid);if(!r)return '';
+    return `<span class="set-chip pend-chip" onclick="gotoRow('${pid}')">${esc(r.platform.name)} · ${PENDING[pid].__clear?'待清除':'未保存'}</span>`;
+  }).join('');
+  updatePendCount();
   if(SEL_PID)renderEditor();
 }
-function selectCard(pid){
-  if(SEL_PID===pid){SEL_PID='';$('cardEditor').classList.add('hidden');lastEdJSON=''}
-  else SEL_PID=pid;
-  renderHot();
+function updatePendCount(){
+  const n=Object.keys(PENDING).length;
+  $('pendCount').textContent=n?('未保存 '+n+' 条'):'';
+  $('saveAllBtn').textContent=n?('保存配置 ('+n+')'):'保存配置';
 }
-// 卡片的内联编辑器：和表格行同一套字段、同一条保存接口；数据没变就不重建，正在输入不会丢。
+// 点卡片 → 嵌套“选择后端”弹窗（AKDNS 式两级选择）：选地区（或不开启），
+// 点“完成”只暂存，不 PUT；X / 点空白处关闭，不改动。
+function selectCard(pid){openBackend(pid)}
+function closeEditor(){SEL_PID='';$('cardEditor').classList.add('hidden');lastEdJSON='';renderHot()}
+function openBackend(pid){
+  const r=RULES.find(x=>x.platform.id===pid);if(!r)return;
+  BACKEND_PID=pid;BACKEND_P=r.platform;
+  const pd=PENDING[pid];
+  const eff=pd&&!pd.__clear?pd:(r.rule||{});
+  BACKEND_SEL=pd&&pd.__clear?'__off__':(eff.region||null);
+  $('backendSub').textContent='选择 '+r.platform.name+' 的出口节点';
+  renderBackendOpts();
+  $('backendModal').classList.remove('hidden');
+}
+function renderBackendOpts(){
+  const regs=(BACKEND_P&&BACKEND_P.regions_available)||[];
+  $('backendOpts').innerHTML=regs.map(code=>`<div class="backend-opt ${BACKEND_SEL===code?'sel':''}" onclick="pickBackend('${code}')"><b>${esc(code)}</b><br><span>${esc(regionName(code))}</span></div>`).join('')||'<p class="muted">该平台没有可选地区</p>';
+  $('backendOffBtn').classList.toggle('btn-off-sel',BACKEND_SEL==='__off__');
+}
+function pickBackend(code){BACKEND_SEL=code;renderBackendOpts()}
+function backendOff(){BACKEND_SEL='__off__';renderBackendOpts()}
+function closeBackend(){BACKEND_PID='';BACKEND_P=null;$('backendModal').classList.add('hidden')}
+function backendDone(){
+  const pid=BACKEND_PID;if(!pid)return;
+  const r=RULES.find(x=>x.platform.id===pid);if(!r){closeBackend();return}
+  let staged=false;
+  if(BACKEND_SEL==='__off__'){
+    if(r.has_rule){PENDING[pid]={__clear:true};staged=true}
+    else delete PENDING[pid];
+  }else if(BACKEND_SEL){
+    const ru=r.rule||{};
+    PENDING[pid]={platform_id:pid,mode:ru.mode||'address',region:BACKEND_SEL,node_id:ru.node_id||'',custom_ip:ru.custom_ip||'',nameserver:ru.nameserver||'',backup_ip:ru.backup_ip||'',auto_failover:!!ru.auto_failover};
+    staged=true;
+  }else{toast('请先选一个后端，或点“不开启”');return}
+  closeBackend();
+  if(staged){SEL_PID=pid;lastEdJSON='';renderHot();toast(BACKEND_SEL==='__off__'?'已暂存清除，点底部“保存配置”生效':'已暂存，点底部“保存配置”生效')}
+}
+// 卡片的内联编辑器：节点/自定义 IP 在这里选（地区在弹窗里选）；数据没变就不重建，正在输入不会丢。
+// 编辑器里的改动只暂存进 PENDING，点底部“保存配置”才 PUT。
 function renderEditor(){
   const r=RULES.find(x=>x.platform.id===SEL_PID);
   const ed=$('cardEditor');
   if(!r){ed.classList.add('hidden');lastEdJSON='';return}
-  const j=JSON.stringify(r);
+  const j=JSON.stringify([r,PENDING[SEL_PID]||null]);
   if(j===lastEdJSON&&!ed.classList.contains('hidden'))return;
   lastEdJSON=j;
-  const p=r.platform,ru=r.rule||{};
+  const p=r.platform;
+  const pd=PENDING[SEL_PID];
   ed.classList.remove('hidden');
-  ed.innerHTML=`<div class="row" style="justify-content:space-between;margin-bottom:4px"><b>${esc(p.name)} · ${esc(p.name_zh)}</b><span>${r.has_rule?'<span class="badge ok">已设置</span>':'<span class="badge dim">未开启</span>'} <button class="ghost" onclick="selectCard('${p.id}')">收起</button></span></div>
-  <div class="muted">当前生效：${r.has_rule?esc(r.resolved_ip||ru.nameserver||'—'):'走上游解析'}</div>
+  if(pd&&pd.__clear){
+    ed.innerHTML=`<div class="row" style="justify-content:space-between;margin-bottom:4px"><b>${esc(p.name)} · ${esc(p.name_zh)}</b><span><span class="badge bad">待清除</span> <button class="ghost" onclick="closeEditor()">收起</button></span></div>
+    <div class="muted">已暂存清除这条规则，点底部“保存配置”后生效；不想清了点下面撤销。</div>
+    <div class="row" style="margin-bottom:0"><button onclick="unstage('${p.id}')">撤销暂存</button></div>`;
+    return;
+  }
+  const ru=pd||r.rule||{};
+  ed.innerHTML=`<div class="row" style="justify-content:space-between;margin-bottom:4px"><b>${esc(p.name)} · ${esc(p.name_zh)}</b><span>${r.has_rule?'<span class="badge ok">已设置</span>':'<span class="badge dim">未开启</span>'}${pd?' <span class="badge" style="background:#fef3c7;color:#92400e">未保存</span>':''} <button class="ghost" onclick="closeEditor()">收起</button></span></div>
+  <div class="muted">当前生效：${r.has_rule?esc(r.resolved_ip||r.rule.nameserver||'—'):'走上游解析'}${pd?' · 这里的改动只暂存，点底部“保存配置”才生效':''}</div>
   <div class="row" style="margin-top:8px">
     <select id="ed-mode"><option value="address" ${(!ru.mode||ru.mode==='address')?'selected':''}>address 直接返回 IP</option><option value="nameserver" ${ru.mode==='nameserver'?'selected':''}>nameserver 转发查询</option></select>
     <select id="ed-region">${regionOptions(ru.region||'')}</select>
@@ -406,22 +531,18 @@ function renderEditor(){
     <input id="ed-backup" placeholder="备用 IP（可选）" value="${esc(ru.backup_ip||'')}" style="width:130px">
     <label class="muted"><input type="checkbox" id="ed-failover" ${ru.auto_failover?'checked':''}> 探活失败自动切备用</label>
   </div>
-  <div class="row" style="margin-bottom:0"><button onclick="saveEditor('${p.id}')">保存配置</button>${r.has_rule?` <button class="ghost" onclick="clearEditor('${p.id}')">清除</button>`:''}</div>`;
+  <div class="row" style="margin-bottom:0"><button onclick="stageEditor('${p.id}')">暂存修改</button>${(r.has_rule||pd)?` <button class="ghost" onclick="stageClear('${p.id}')">清除</button>`:''}${pd?` <button class="ghost" onclick="unstage('${p.id}')">撤销暂存</button>`:''}</div>`;
 }
-async function saveEditor(pid){
+function stageEditor(pid){
   const g=id=>{const el=$(id);return el?(el.type==='checkbox'?el.checked:el.value.trim()):''};
   const b={platform_id:pid,node_id:g('ed-node'),region:g('ed-region'),custom_ip:g('ed-custom'),backup_ip:g('ed-backup'),auto_failover:g('ed-failover'),mode:g('ed-mode'),nameserver:g('ed-ns')};
   if(b.mode==='nameserver'&&!b.nameserver){alert('nameserver 模式需要填上游 DNS IP');return}
   if(b.mode!=='nameserver'&&!b.node_id&&!b.region&&!b.custom_ip){alert('请先选地区/IP 或直接填一个 IP');return}
-  let ok=false;
-  try{await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)});ok=true}
-  catch(e){if(e.conflict&&confirm(e.message+'\n\n点确定强制保存（以本条规则为准）。')){b.force=true;await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)});ok=true}else if(!e.conflict){alert(e.message);return}}
-  if(!ok)return;
-  await refreshRulesOnly();
-  updateRow(pid);
-  toast('已保存');
+  PENDING[pid]=b;lastEdJSON='';
+  renderHot();toast('已暂存，点底部“保存配置”生效');
 }
-async function clearEditor(pid){await api('/api/v1/rules',{method:'PUT',body:JSON.stringify({platform_id:pid})});await refreshRulesOnly();updateRow(pid);toast('已清除')}
+function stageClear(pid){PENDING[pid]={__clear:true};lastEdJSON='';renderHot();toast('已暂存清除，点底部“保存配置”生效')}
+function unstage(pid){delete PENDING[pid];lastEdJSON='';renderHot();toast('已撤销暂存')}
 function gotoRow(pid){
   SEL_PID=pid;
   $('q').value='';$('cat').value='';$('onlySet').checked=false;
@@ -433,6 +554,76 @@ let toastTimer=null;
 function toast(msg){
   const t=$('toast');t.textContent=msg;t.classList.add('show');
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2000);
+}
+// ---- 底部操作栏（AKDNS 配置服务式）：删除 / 导出 / 导入 / 保存配置 ----
+// 保存配置 = 把 PENDING 里所有暂存改动逐条 PUT；409 冲突不自动强制，记为失败
+// 并在汇总里说明（去表格里点保存可强制）。
+async function saveAllPending(){
+  const ids=Object.keys(PENDING);
+  if(!ids.length){toast('没有未保存的改动');return}
+  const ok=[],fail=[];
+  for(const pid of ids){
+    const pd=PENDING[pid];
+    const body=pd.__clear?{platform_id:pid}:pd;
+    try{await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(body)});ok.push(pid)}
+    catch(e){fail.push(pid+'：'+(e.conflict?'冲突，需在表格里强制保存':e.message))}
+  }
+  for(const pid of ok)delete PENDING[pid];
+  await refreshRulesOnly();
+  for(const pid of ids)updateRow(pid);
+  renderHot();
+  if(fail.length)alert('保存配置：成功 '+ok.length+' 条，失败 '+fail.length+' 条\n'+fail.join('\n'));
+  else toast('已保存 '+ok.length+' 条');
+}
+// 删除 = 清除全部已设置规则（二次确认，立即生效）；暂存的改动一起丢弃。
+async function clearAllRules(){
+  const set=RULES.filter(r=>r.has_rule);
+  if(!set.length){toast('本来就没有已设置的规则');return}
+  if(!confirm('确定要清除全部已设置规则吗？\n共 '+set.length+' 条规则将被清除，立即生效，不可撤销。\n（卡片网格里暂存的未保存改动也会一起丢弃。）'))return;
+  const fail=[];
+  for(const r of set){
+    try{await api('/api/v1/rules',{method:'PUT',body:JSON.stringify({platform_id:r.platform.id})})}
+    catch(e){fail.push(r.platform.id+'：'+e.message)}
+  }
+  PENDING={};
+  await refreshRulesOnly();renderRules();renderHot();
+  if(fail.length)alert('清除：失败 '+fail.length+' 条\n'+fail.join('\n'));
+  else toast('已清除全部 '+set.length+' 条规则');
+}
+// 导出 = 当前全部已设规则下载为 JSON（纯前端，不需要新接口）；导入读回同一格式。
+function exportRules(){
+  const rules=RULES.filter(r=>r.has_rule).map(r=>{const ru=r.rule||{};return {platform_id:r.platform.id,mode:ru.mode||'address',region:ru.region||'',node_id:ru.node_id||'',custom_ip:ru.custom_ip||'',nameserver:ru.nameserver||'',backup_ip:ru.backup_ip||'',auto_failover:!!ru.auto_failover}});
+  const data={app:'dnsunlock',version:1,exported_at:new Date().toISOString(),rules};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  const d=new Date(),pad=n=>String(n).padStart(2,'0');
+  a.download='dnsunlock-rules-'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'-'+pad(d.getHours())+pad(d.getMinutes())+'.json';
+  a.href=URL.createObjectURL(blob);a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  toast('已导出 '+rules.length+' 条规则');
+}
+function importRules(){$('importFile').click()}
+async function onImportFile(ev){
+  const f=ev.target.files&&ev.target.files[0];ev.target.value='';
+  if(!f)return;
+  let data;
+  try{data=JSON.parse(await f.text())}catch(e){alert('导入失败：文件不是合法 JSON');return}
+  const list=Array.isArray(data)?data:(data&&Array.isArray(data.rules)?data.rules:null);
+  if(!list){alert('导入失败：JSON 里没有 rules 数组（应为导出的文件格式）');return}
+  const ok=[],fail=[];
+  for(const it of list){
+    const pid=it&&it.platform_id;
+    const p=PLATFORMS.find(x=>x.id===pid);
+    if(!p){fail.push(String(pid)+'：平台不存在');continue}
+    const b={platform_id:pid,mode:it.mode||'address',region:it.region||'',node_id:it.node_id||'',custom_ip:it.custom_ip||'',nameserver:it.nameserver||'',backup_ip:it.backup_ip||'',auto_failover:!!it.auto_failover};
+    if(b.mode==='nameserver'&&!b.nameserver){fail.push(pid+'：nameserver 模式缺上游 DNS');continue}
+    if(b.mode!=='nameserver'&&!b.node_id&&!b.region&&!b.custom_ip){fail.push(pid+'：缺地区/IP');continue}
+    try{await api('/api/v1/rules',{method:'PUT',body:JSON.stringify(b)});ok.push(pid)}
+    catch(e){fail.push(pid+'：'+(e.conflict?'冲突，需在表格里强制保存':e.message))}
+  }
+  await refreshRulesOnly();renderRules();
+  if(fail.length)alert('导入完成：成功 '+ok.length+' 条，失败 '+fail.length+' 条\n'+fail.join('\n'));
+  else toast('导入完成：成功 '+ok.length+' 条');
 }
 const REVEALED={};
 async function toggleReveal(id){
