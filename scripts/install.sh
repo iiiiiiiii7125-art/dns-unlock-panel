@@ -63,7 +63,7 @@ has_tty() { { : < /dev/tty; } 2>/dev/null; }
 # 计时不用 date +%s%N（Alpine/busybox 上不可靠，见审计 P3-06）：有 python3 就用它计时，
 # 没有就只按通/不通排序，不编造毫秒数。
 pick_fastest_ip() {
-  local best="" ip ok
+  local best="" ip
   IFS=',' read -ra IPS <<< "$1"
   for ip in "${IPS[@]}"; do
     ip="$(echo "$ip" | tr -d ' ')"
