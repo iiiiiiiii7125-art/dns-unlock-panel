@@ -643,7 +643,7 @@ function renderNodes(){
   $('nodesBody').innerHTML=NODES.map(n=>`<tr><td>${esc(n.name)}</td><td>${REVEALED[n.id]?esc(REVEALED[n.id]):esc(n.ip)} <button class="ghost" onclick="toggleReveal('${n.id}')">${REVEALED[n.id]?'隐藏':'显示'}</button></td><td>${esc(n.region)}</td>
   <td>${n.status==='online'?'<span class="badge ok">在线</span>':n.status==='offline'?'<span class="badge bad">离线（仅探活失败，不自动改规则）</span>':'<span class="badge dim">未知</span>'}</td>
   <td>${typeof n.latency_ms==='number'&&n.latency_ms>=0?n.latency_ms+' ms':'—'}</td><td>${esc(n.note||'')}</td>
-  <td><button onclick="copyNodeInstall()">复制安装命令</button> <button class="danger" onclick="delNode('${n.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="7" class="muted">还没有解锁 IP：上方添加任意 IP 即可</td></tr>';
+  <td><button onclick="copyNodeInstall('${n.id}')">复制安装命令</button> <button class="danger" onclick="delNode('${n.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="7" class="muted">还没有解锁 IP：上方添加任意 IP 即可</td></tr>';
 }
 async function addNode(){
   const name=$('n-name').value.trim(),ip=$('n-ip').value.trim(),region=$('n-region').value,note=$('n-note').value.trim();
@@ -776,17 +776,31 @@ async function copyServerInstall(id){
 // 这里逐台调 reveal 取完整 IP；重跑一次命令就能更新 allowlist。
 // V016-19：零台服务器时不生成命令——安装脚本先校验 agent token，没有服务
 // 器就没有可用 token，命令到机器上跑不通；改成提示先登记服务器。
-async function copyNodeInstall(){
+// V016-21：每行按钮传自己的节点 id，复制的命令首行用注释标明是给哪台节点装
+// 的（安装脚本在 --unlock-node 模式下只认 DNS_SNI_ALLOWLIST，不认节点名，
+// 所以行绑定只能落在注释里——注释写清“在这台机器上执行”，不让人误以为
+// 命令本身带了节点身份；节点名里的换行先去掉，防注释断行注入新命令）。
+// reveal 失败不再静默跳过：全失败时不复制、如实报取 IP 失败；部分失败时
+// 复制已有 IP 的命令，但提示里点名哪台没取到（allowlist 可能不全）。
+async function copyNodeInstall(nodeId){
+  const node=NODES.find(x=>x.id===nodeId);
   if(!SERVERS.length){alert('还没有登记 DNS 服务器：先去「DNS 服务器」页登记一台（拿到 agent token 后再装节点）。节点安装命令装机时要先校验 agent token，没有服务器就没有可用 token，现在复制了也跑不通。');return}
-  const ips=[];
+  const ips=[],failed=[];
   for(const s of SERVERS){
-    try{const j=await api('/api/v1/servers/'+s.id+'/reveal');if(j.ip&&!ips.includes(j.ip))ips.push(j.ip)}catch(e){}
+    try{const j=await api('/api/v1/servers/'+s.id+'/reveal');if(j.ip&&!ips.includes(j.ip))ips.push(j.ip)}
+    catch(e){failed.push(s.name+'（取 IP 失败：'+(e.message||e)+'）')}
   }
-  let c='curl -fsSL '+location.origin+'/install.sh | ';
+  if(!ips.length&&failed.length){alert('取 DNS 服务器 IP 失败，命令未复制：'+failed.join('；')+'。请稍后重试，或重新登录后再试。');return}
+  const tag=node?node.name+'（'+(node.ip||'')+'，'+(node.region||'')+'）':'节点';
+  const head='# 在「'+String(tag).replace(/[\r\n]/g,' ')+'」这台机器上执行：装 SNI 解锁代理；执行时会问 agent token，填任意一台已登记 DNS 服务器的 token。';
+  let c=head+'\n'+'curl -fsSL '+location.origin+'/install.sh | ';
   if(ips.length)c+='DNS_SNI_ALLOWLIST='+sq(ips.join(','))+' ';
   c+='bash -s -- --unlock-node';
   navigator.clipboard.writeText(c);
-  alert(ips.length?'安装命令已复制，到节点机器粘贴执行。执行时会问 agent token：填任意一台已登记 DNS 服务器的 token（「DNS 服务器」页可查看）。':'安装命令已复制（未登记 DNS 服务器，allowlist 未填，安装时按提示输入）。');
+  let msg='已复制「'+(node?node.name:'节点')+'」的安装命令，到这台机器粘贴执行。执行时会问 agent token：填任意一台已登记 DNS 服务器的 token（「DNS 服务器」页可查看）。';
+  if(!ips.length)msg+='（allowlist 未填：已登记的服务器没有可用的 IP，安装时按提示输入 DNS 服务器 IP。）';
+  if(failed.length)msg+='注意：以下服务器的 IP 没取到，allowlist 可能不全：'+failed.join('；')+'。';
+  alert(msg);
 }
 async function addServer(){
   const name=$('s-name').value.trim(),ip=$('s-ip').value.trim(),def=$('s-defip').value.trim(),allow=$('s-allow').value.trim();
