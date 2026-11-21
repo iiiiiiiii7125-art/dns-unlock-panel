@@ -356,14 +356,21 @@ run_restore "$LOG/s10-restore.log" --backup "$B_S10" --yes
 assert "S10 还原后 nsswitch 回到无 dns" file_lacks /etc/nsswitch.conf "dns"
 assert "S10 还原后 drop-in 已删（stash 记 absent）" file_absent /etc/systemd/resolved.conf.d/dnsunlock.conf
 
-echo "=== S11 升级路径：验证不走 agent → disable --now resolved ==="
+echo "=== S11 非 53 监听端口：R2-02 拒绝接管，agent 照常跑 ==="
 reset_state
 run_install "$LOG/s11.log" --dns-listen 127.0.0.1:15353
 assert "S11 install rc=0" assert_rc0
-assert "S11 输出升级处理" file_has "$LOG/s11.log" "升级处理"
-assert "S11 输出验证未通过警告" file_has "$LOG/s11.log" "验证未通过"
-assert "S11 systemctl 记了 disable --now resolved" markers_has "disable systemd-resolved"
-assert "S11 resolv.conf 仍是 127.0.0.1" resolv_is_127
+# R2-02：非 53 端口在接管提问后直接拒绝（TAKEOVER="n"），根本不到验证/
+# 升级环节；旧期望（升级处理/验证未通过/disable resolved/写 127.0.0.1）
+# 已过期。S6 的 :53 路径升级处理仍在，两场景不要混淆。
+# 注意：摘要提问也被跳过，答案流里 S11 的第二个 y 会滚到 S13 的第一个提问
+# （S13 仍按 y/y 对齐，多余一行留在 pty 缓冲，无害；合并验证 2308Z 已证实）。
+assert "S11 输出非 53 拒绝接管" file_has "$LOG/s11.log" "监听端口不是 53"
+assert "S11 输出本次不接管" file_has "$LOG/s11.log" "本次不接管"
+assert "S11 未接管：resolv.conf 未动" files_eq /etc/resolv.conf "$RIG/fixtures/resolv.conf.base"
+assert "S11 未停用 resolved" file_lacks "$LOG/markers.log" "disable systemd-resolved"
+assert "S11 agent 已在 15353 上跑" agent_active
+assert "S11 agent 在 15353 上答规则 IP" dig_rule_ok_port 15353
 run_restore "$LOG/s11-restore.log" --yes
 assert "S11 还原后验证通过" file_has "$LOG/s11-restore.log" "已还原并验证通过"
 assert "S11 还原回原文件" files_eq /etc/resolv.conf "$RIG/fixtures/resolv.conf.base"

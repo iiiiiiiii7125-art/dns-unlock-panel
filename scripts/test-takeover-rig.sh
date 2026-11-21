@@ -33,7 +33,7 @@
 #   S3 还原回滚 / S4 --temp resolvectl 路径 / S5 --temp 直接写文件 /
 #   S6 缺 dig 警告继续 / S7a 手动输入非法拒绝 / S7b 手动输入合法继续 /
 #   S8 摘要确认默认 N / S9a hpve-init 默认 N / S9b hpve-init 确认继续 /
-#   S10 nsswitch 补 dns / S11 升级路径（disable --now resolved）/
+#   S10 nsswitch 补 dns / S11 非 53 端口拒绝接管（R2-02，agent 照常跑）/
 #   S12 Tailscale 守卫 / S13 还原 --backup 指定备份 /
 #   S14 函数级（validate_ipv4 / valid_panel_url / probe / UUID / verify）/
 #   S15 无永久备份提示临时清理办法。
@@ -64,7 +64,9 @@
 #   S9a: 接管 y / hpve 空（默认 N）
 #   S9b: 接管 y / hpve y / 摘要 y
 #   S10: 接管 y / 摘要 y
-#   S11: 接管 y / 摘要 y
+#   S11: 接管 y（R2-02 守卫直接拒绝接管，摘要提问被跳过；答案流里 S11 的
+#         第二个 y 会滚到 S13 的第一个提问，S13 仍按 y/y 对齐，多余一行
+#         留在 pty 缓冲，无害；合并验证 2308Z 已证实——不要“修”答案流）
 #   S13: 接管 y / 摘要 y
 set -euo pipefail
 cd "$(dirname "$0")/.."
