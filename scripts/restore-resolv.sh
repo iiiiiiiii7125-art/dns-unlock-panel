@@ -109,7 +109,7 @@ agent_unit_exists() {
 }
 
 # 还原前记 agent 状态并停掉它。停不掉、或停完 :53 仍被占，就直接退出 1——
-# 此时还没改任何文件（只做了还原前备份），比还原到一半才发现要强。
+# 此时还没改系统 DNS 配置（只写了一份还原前备份），比还原到一半才发现要强。
 record_and_stop_agent() {
   AGENT_WAS_ACTIVE=0; AGENT_WAS_ENABLED=0; AGENT_LISTEN=""
   agent_unit_exists || return 0
@@ -122,7 +122,7 @@ record_and_stop_agent() {
   [ -n "$AGENT_LISTEN" ] || AGENT_LISTEN=":53"
   echo "还原前 agent 在运行（监听 $AGENT_LISTEN），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）..."
   if ! systemctl stop "$AGENT_UNIT" 2>/dev/null; then
-    echo "错误: 停 dnsunlock-agent 失败，还原已中止（未改任何文件）；请手动 systemctl stop dnsunlock-agent 后重跑" >&2
+    echo "错误: 停 dnsunlock-agent 失败，还原已中止（只写了一份还原前备份 ${PRE_RESTORE_BACKUP:-（见 /var/lib/dnsunlock/backup/ 下最新一份）}，未改系统 DNS 配置）；请手动 systemctl stop dnsunlock-agent 后重跑" >&2
     exit 1
   fi
   # stop 是同步的，但多等一下确认 :53 真空出来了；ss 不存在就跳过这步。
@@ -131,7 +131,7 @@ record_and_stop_agent() {
       if ! ss -tuln 2>/dev/null | grep -qE ':53[[:space:]]'; then return 0; fi
       sleep 1
     done
-    echo "错误: agent 已停，但 :53 仍被占（可能是别的服务），还原已中止（未改任何文件）；请先处理占 :53 的服务后重跑" >&2
+    echo "错误: agent 已停，但 :53 仍被占（可能是别的服务），还原已中止（只写了一份还原前备份 ${PRE_RESTORE_BACKUP:-（见 /var/lib/dnsunlock/backup/ 下最新一份）}，未改系统 DNS 配置）；请先处理占 :53 的服务后重跑" >&2
     exit 1
   fi
   return 0
@@ -442,6 +442,7 @@ if [ -n "$CHOSEN" ]; then
   # 还原前先自动备份当前状态，备份失败就中止。
   PRE_DIR=$(do_backup "pre-restore") || { echo "还原前自动备份当前状态失败，已中止还原（未改任何文件）"; exit 1; }
   echo "还原前已自动备份当前状态 -> $PRE_DIR"
+  PRE_RESTORE_BACKUP="$PRE_DIR"
   restore_from_dir "$CHOSEN"
   verify_after_restore
   restore_agent_after
@@ -456,6 +457,7 @@ if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   fi
   PRE_DIR=$(do_backup "pre-restore") || { echo "还原前自动备份当前状态失败，已中止还原（未改任何文件）"; exit 1; }
   echo "还原前已自动备份当前状态 -> $PRE_DIR"
+  PRE_RESTORE_BACKUP="$PRE_DIR"
   restore_legacy
   verify_after_restore
   restore_agent_after
