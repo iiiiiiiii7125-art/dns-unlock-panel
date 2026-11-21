@@ -119,7 +119,9 @@ ss_listen_53_p() {
   ss -tulnp 2>/dev/null | awk '$1 ~ /^(udp|tcp)/ && $5 ~ /:53$/ {u=""; for (i=7;i<=NF;i++) u=u $i " "; sub(/ $/,"",u); print $5 "\t" u}' | sort -u
 }
 
-_addr_host() { local a="$1"; a="${a%:*}"; a="${a#[}"; a="${a%]}"; printf '%s' "$a"; }
+# R2-03：ss 输出的监听地址可能带接口后缀（如 127.0.0.53%lo:53），先剥掉
+# %… 后缀再比对，否则 stub 会被误判为外来占位。
+_addr_host() { local a="$1"; a="${a%:*}"; a="${a#[}"; a="${a%]}"; a="${a%%\%*}"; printf '%s' "$a"; }
 _addr_port() { printf '%s' "${1##*:}"; }
 _is_wildcard_host() {
   case "$1" in ""|\*|0.0.0.0|::) return 0;; *) return 1;; esac
@@ -464,7 +466,9 @@ EOF
 measure_53() {
   if command -v ss >/dev/null 2>&1; then
     local addrs=""
-    addrs=$(ss_listen_53_p 2>/dev/null | cut -f1 | sort -u | tr '\n' ' ' | sed 's/ $//')
+    # R2-03：ss 输出的地址可能带接口后缀（127.0.0.53%lo:53），归一化掉
+    # %… 后缀再比对，否则 stub 分支是死代码、误报 held。
+    addrs=$(ss_listen_53_p 2>/dev/null | cut -f1 | sed 's/%[^ :]*//g' | sort -u | tr '\n' ' ' | sed 's/ $//')
     if [ -z "$addrs" ]; then echo "free"; return 0; fi
     case " $addrs " in
       *" 127.0.0.53:53 "*) echo "stub 127.0.0.53:53"; return 0;;
