@@ -7,7 +7,7 @@
 #   curl -fsSL <面板地址>/install.sh | DNS_AGENT_TOKEN=<token> DNS_SERVER_NAME='名' DNS_DEFAULT_IP=<ip> DNS_ALLOWLIST='<allow>' bash
 #                                                            # 面板自动生成的命令：值都带好了，不再逐项问
 #   curl -fsSL <面板地址>/install.sh | bash -s -- --unlock-node  # 可选: 把本机变成 SNI 解锁节点
-#   bash install.sh --dns-listen 127.0.0.1:5353   # 改 DNS 监听地址（默认 :53）
+#   bash install.sh --dns-listen 127.0.0.1:53   # 改 DNS 监听地址（默认 :53；接管只支持 53 端口）
 # 环境变量：DNS_LISTEN（同 --dns-listen，命令行优先）、DNS_DISABLE_STUB=y
 #   （systemd-resolved 的 stub 占着 :53 时，自动问是否关掉 stub 监听；设
 #   DNS_DISABLE_STUB=y 则不问直接关。只关 stub 监听，不改 /etc/resolv.conf。）
@@ -163,7 +163,7 @@ while [ $# -gt 0 ]; do
     --help|-h)
       echo "用法: bash install.sh [--panel URL] [--dns-listen ADDR] [--allowlist IPS] [--unlock-node] [--temp]"
       echo "  --panel URL         面板地址（默认已 baked；443 不通时自动改走同主机 :8080，也可直接指定内网地址）"
-      echo "  --dns-listen ADDR   DNS 监听地址，默认 :53；如 127.0.0.1:5353（也可设 DNS_LISTEN 环境变量）"
+      echo "  --dns-listen ADDR   DNS 监听地址，默认 :53；系统 DNS 接管只支持 53 端口（resolv.conf 写不下端口），非 53 端口只能跑 agent、须手动指 DNS（也可设 DNS_LISTEN 环境变量）"
       echo "  --allowlist IPS     允许使用本 DNS 的客户端 IP/CIDR，逗号分隔（必填）"
       echo "  --unlock-node       只装 SNI 解锁节点，不装 DNS 分流服务"
       echo "  --temp              临时模式：只把本次运行的 DNS 指到 agent，不做永久接管（重启后失效，不写永久备份、不加 chattr 锁、不停任何管理器）"
@@ -178,10 +178,10 @@ DNS_LISTEN="${DNS_LISTEN:-:53}"
 case "$DNS_LISTEN" in
   *:*)
     _dl_port="${DNS_LISTEN##*:}"
-    case "$_dl_port" in ''|*[!0-9]*) echo "DNS 监听地址格式不对: $DNS_LISTEN（端口要是 1-65535 的数字，如 :53 或 127.0.0.1:5353）"; exit 1;; esac
+    case "$_dl_port" in ''|*[!0-9]*) echo "DNS 监听地址格式不对: $DNS_LISTEN（端口要是 1-65535 的数字，如 :53 或 127.0.0.1:53）"; exit 1;; esac
     [ "$_dl_port" -ge 1 ] && [ "$_dl_port" -le 65535 ] || { echo "DNS 监听端口超出范围: $DNS_LISTEN"; exit 1; }
     ;;
-  *) echo "DNS 监听地址格式不对: $DNS_LISTEN（要含冒号，如 :53 或 127.0.0.1:5353）"; exit 1;;
+  *) echo "DNS 监听地址格式不对: $DNS_LISTEN（要含冒号，如 :53 或 127.0.0.1:53）"; exit 1;;
 esac
 
 [ "$(id -u)" = "0" ] || { echo "请用 root 运行 (sudo bash)"; exit 1; }
@@ -670,6 +670,16 @@ apply_temp_dns() {
     write_temp_state none ""
     return 0
   fi
+  # R2-02：非 53 监听端口无法做系统 DNS 接管——resolv.conf 写不下端口，
+  # nameserver 127.0.0.1 永远到不了 :5353 上的 agent，接管后系统 DNS 必死。
+  # 所以临时模式在端口 != 53 时不改本机 DNS（只记 mode=none，不留残留）；
+  # agent 本身仍在该端口上跑，供手动把 DNS 指到它的客户端用。
+  if [ "${_dl_port:-53}" != "53" ]; then
+    echo "注意: agent 监听端口不是 53（$DNS_LISTEN），无法做系统 DNS 接管（resolv.conf 写不下端口，写 nameserver 127.0.0.1 到不了 :${_dl_port} 上的 agent）；临时模式不改本机 DNS。"
+    echo "agent 本身已在 $DNS_LISTEN 上运行，可供手动指 DNS 的客户端用；如需本机系统 DNS 也走分流，请用 --dns-listen :53（或 127.0.0.1:53）重跑安装。"
+    write_temp_state none ""
+    return 0
+  fi
   probe_agent_transport "$_dl_host" "$_dl_port"
   if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
     iface=$(get_primary_interface)
@@ -872,7 +882,7 @@ if [ "$MODE" = "dns" ]; then
         _bind_rc=0
         can_bind_listen "$DNS_LISTEN" || _bind_rc=$?
         if [ "$_bind_rc" = 1 ]; then
-          echo "临时模式：127.0.0.1:53 也被占，无法启动 agent；请用 --dns-listen 换个空闲端口（如 127.0.0.1:5353）后重跑，或先停掉占用的服务。" >&2
+          echo "临时模式：127.0.0.1:53 也被占，无法启动 agent；请先停掉占用的服务，或用 --dns-listen 换个空闲的 53 监听地址（如 127.0.0.2:53）后重跑。注意：非 53 端口（如 5353）无法做系统 DNS 接管，resolv.conf 写不下端口。" >&2
           exit 1
         elif [ "$_bind_rc" = 2 ]; then
           echo "注意: 没装 python3，无法准确探测 127.0.0.1:53 是否可绑定；继续安装，启动后第 [4/6] 步会验证解析，不通会报错。"
@@ -880,7 +890,7 @@ if [ "$MODE" = "dns" ]; then
           echo "监听地址 $DNS_LISTEN 可绑定。"
         fi
       else
-        echo "临时模式：$DNS_LISTEN 已被占用（不关 stub、不改持久状态）：请用 --dns-listen 换个端口（如 127.0.0.1:5353），或先停掉占用的服务再重跑。" >&2
+        echo "临时模式：$DNS_LISTEN 已被占用（不关 stub、不改持久状态）：请用 --dns-listen 换个空闲的 53 监听地址（如 127.0.0.1:53），或先停掉占用的服务再重跑。注意：非 53 端口无法做系统 DNS 接管，resolv.conf 写不下端口。" >&2
         exit 1
       fi
     elif stub_only_conflict; then
@@ -891,15 +901,15 @@ if [ "$MODE" = "dns" ]; then
         if can_bind_listen "$DNS_LISTEN"; then
           echo "stub 已关，$DNS_LISTEN 现在可绑定。"
         else
-          echo "关掉 stub 后 $DNS_LISTEN 仍被占：请用 --dns-listen 换个端口（如 127.0.0.1:5353），或先停掉占用的服务再重跑。"
+          echo "关掉 stub 后 $DNS_LISTEN 仍被占：请用 --dns-listen 换个空闲的 53 监听地址（如 127.0.0.1:53），或先停掉占用的服务再重跑。注意：非 53 端口无法做系统 DNS 接管，resolv.conf 写不下端口。"
           exit 1
         fi
       else
-        echo "未关 stub：请用 --dns-listen 换个端口（如 bash install.sh --dns-listen 127.0.0.1:5353），或先停掉占用的服务再重跑。"
+        echo "未关 stub：请用 --dns-listen 换个空闲的 53 监听地址（如 bash install.sh --dns-listen 127.0.0.1:53），或先停掉占用的服务再重跑。注意：非 53 端口无法做系统 DNS 接管，resolv.conf 写不下端口。"
         exit 1
       fi
     else
-      echo "$DNS_LISTEN 已被占用（不是 systemd-resolved 的 stub）：请用 --dns-listen 换个端口，或先停掉占用的服务再重跑。"
+      echo "$DNS_LISTEN 已被占用（不是 systemd-resolved 的 stub）：请用 --dns-listen 换个空闲的 53 监听地址，或先停掉占用的服务再重跑。注意：非 53 端口无法做系统 DNS 接管，resolv.conf 写不下端口。"
       exit 1
     fi
   elif [ "$_bind_rc" = 2 ]; then
@@ -1128,6 +1138,14 @@ elif grep -qi "tailscale" /etc/resolv.conf 2>/dev/null || grep -q "nameserver 10
 else
 echo
 ask TAKEOVER "是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] "
+# R2-02：非 53 监听端口拒绝接管（resolv.conf 写不下端口；见 apply_temp_dns
+# 的同款守卫）。agent 本身照常装好在该端口上跑，只是不改本机系统 DNS；
+# 这样接管后的“停用 resolved”升级也不会被触发。
+if { [ "${TAKEOVER:-}" = "y" ] || [ "${TAKEOVER:-}" = "Y" ]; } && [ "${_dl_port:-53}" != "53" ]; then
+  echo "监听端口不是 53（agent 监听 $_dl_host:$_dl_port），无法做系统 DNS 接管：resolv.conf 写不下端口，写 nameserver 127.0.0.1 到不了 :$_dl_port 上的 agent，接管后系统 DNS 会死；本次不接管。"
+  echo "agent 本身已装好并在 $_dl_host:$_dl_port 上运行，可供手动把 DNS 指到它的客户端用；如需本机系统 DNS 也走分流，请用 --dns-listen :53（或 127.0.0.1:53）重跑安装。"
+  TAKEOVER="n"
+fi
 # v0.1.6 item 1：hpve-init 痕迹检测——明确提示并询问，绝不静默接管。
 if { [ "${TAKEOVER:-}" = "y" ] || [ "${TAKEOVER:-}" = "Y" ]; } && detect_hpve_init; then
   echo "!!!! 注意：检测到 hpve-init 管理本机 DNS 的痕迹（/etc/resolv.conf 或系统里有 hpve-init 相关文件/服务）!!!!"
@@ -1258,7 +1276,9 @@ PYEOF
   TAKEOVER_VERIFY=0
   verify_system_dns example.com || TAKEOVER_VERIFY=$?
   # v0.1.6 item 1：默认只关 stub；验证仍不走 agent 时升级为彻底停用 resolved。
-  if [ "$TAKEOVER_VERIFY" = 1 ] && systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+  # R2-02：升级只在监听端口为 53 时触发——非 53 端口时解析永不走 agent，
+  # 停用 resolved 只会把系统 DNS 从“不走分流”升级成“全死”。
+  if [ "$TAKEOVER_VERIFY" = 1 ] && [ "${_dl_port:-53}" = "53" ] && systemctl is-active --quiet systemd-resolved 2>/dev/null; then
     echo "接管后系统解析仍不走 agent：升级处理，彻底停用 systemd-resolved（systemctl disable --now systemd-resolved）..."
     systemctl disable --now systemd-resolved 2>/dev/null || echo "警告: 停用 systemd-resolved 失败，靠文件锁兜底" >&2
     sleep 1
