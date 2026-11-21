@@ -295,8 +295,12 @@ run_install "$LOG/s9b.log"
 assert "S9b install rc=0" assert_rc0
 assert "S9b 接管完成" resolv_is_127
 assert "S9b 备份 metadata 含原 DNS 1.1.1.1" newest_meta_has "1.1.1.1"
-run_restore "$LOG/s9b-restore.log" --yes
-assert "S9b 清理：还原回 hpve 文件" files_eq /etc/resolv.conf "$RIG/fixtures/resolv.conf.hpve"
+# V016-14：--yes 默认还原最早一份（原始 base 文件），不是本次 hpve 备份；
+# 直接断言 hpve 与产品语义矛盾。改用 --backup 显式还原本次接管前备份。
+B_S9B=$(newest_backup)
+run_restore "$LOG/s9b-restore.log" --backup "$B_S9B" --yes
+assert "S9b restore rc=0" assert_rc0
+assert "S9b 清理：--backup 显式还原回 hpve 文件" files_eq /etc/resolv.conf "$RIG/fixtures/resolv.conf.hpve"
 
 echo "=== S10 nsswitch：hosts 行补 dns ==="
 reset_state
