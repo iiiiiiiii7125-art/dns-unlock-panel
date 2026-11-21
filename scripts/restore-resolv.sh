@@ -796,6 +796,90 @@ restore_legacy() {
   echo "已还原 /etc/resolv.conf <- /etc/dnsunlock/resolv.conf.orig"
 }
 
+# cleanup_temp_state：清理 --temp 临时模式留下的运行时 DNS（V016-01）。
+# 按 /etc/dnsunlock/temp-state/state 的记录来：
+#   resolvectl 模式：resolvectl revert <iface>（运行时设置，重启即失效，不动文件）；
+#   direct-write 模式：把 resolv.conf 从 temp-state/resolv.conf.orig 恢复
+#     （原先是软链时恢复软链 + 把内容写回目标），再清掉 temp-state 与开机 unit；
+#   none 模式：DNS 没动过，只清记录。
+# 若临时模式启动了 agent（agent_was_active=0），停掉它；之前已在跑的 agent 不动。
+# 尽力而为：哪步失败都警告并继续，最后仍清记录、返回 0（开机 unit 调用时不能失败）。
+# 注意：这里绝不能直接 systemctl restart systemd-resolved——agent 还占着 :53
+# 时 resolved 会抢不到 stub（正是 V016-01 的 P1）；要先停 agent，或用 resolvectl revert。
+cleanup_temp_state() {
+  local _state="/etc/dnsunlock/temp-state/state" _mode="" _iface="" _was_active="0" _link="" _tgt="" _pid=""
+  echo "临时模式清理：按 /etc/dnsunlock/temp-state 的记录恢复 DNS..."
+  if [ ! -f "$_state" ]; then
+    echo "临时模式清理：没有临时状态记录（/etc/dnsunlock/temp-state/state 不存在），无需清理。"
+    return 0
+  fi
+  _mode=$(sed -n 's/^mode=//p' "$_state" 2>/dev/null | head -1)
+  _iface=$(sed -n 's/^iface=//p' "$_state" 2>/dev/null | head -1)
+  _was_active=$(sed -n 's/^agent_was_active=//p' "$_state" 2>/dev/null | head -1)
+  case "$_mode" in
+    resolvectl)
+      if [ -n "$_iface" ] && command -v resolvectl >/dev/null 2>&1; then
+        if resolvectl revert "$_iface" 2>/dev/null; then
+          echo "临时模式清理：已 resolvectl revert $_iface（运行时 DNS 已恢复）。"
+        else
+          echo "警告: resolvectl revert $_iface 失败；可先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved 恢复。" >&2
+        fi
+      else
+        echo "警告: 无法 resolvectl revert（无网卡记录或无 resolvectl）；可先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved 恢复。" >&2
+      fi
+      ;;
+    direct-write)
+      if [ -f /etc/dnsunlock/temp-state/resolv.conf.orig ]; then
+        chattr -i /etc/resolv.conf 2>/dev/null || true
+        if [ -f /etc/dnsunlock/temp-state/resolv.conf.link ]; then
+          _link=$(cat /etc/dnsunlock/temp-state/resolv.conf.link 2>/dev/null || true)
+          rm -f /etc/resolv.conf
+          if [ -n "$_link" ]; then
+            ln -s "$_link" /etc/resolv.conf 2>/dev/null || true
+            case "$_link" in /*) _tgt="$_link" ;; *) _tgt="/etc/$_link" ;; esac
+            if [ ! -e "$_tgt" ]; then
+              mkdir -p "$(dirname "$_tgt")" 2>/dev/null || true
+              cp -L /etc/dnsunlock/temp-state/resolv.conf.orig "$_tgt" 2>/dev/null || echo "警告: 软链目标 $_tgt 不存在且写回失败，请手动恢复" >&2
+            fi
+            echo "临时模式清理：已恢复 /etc/resolv.conf 软链 -> $_link。"
+          fi
+        else
+          cp -L /etc/dnsunlock/temp-state/resolv.conf.orig /etc/resolv.conf 2>/dev/null || echo "警告: 恢复 /etc/resolv.conf 失败，请手动检查" >&2
+          echo "临时模式清理：已把 /etc/resolv.conf 从临时状态恢复。"
+        fi
+      else
+        echo "警告: 临时状态里没有原 resolv.conf 备份，无法恢复文件；请手动检查 /etc/resolv.conf。" >&2
+      fi
+      ;;
+    none)
+      echo "临时模式清理：临时安装时未改本机 DNS，无需恢复文件。"
+      ;;
+    *)
+      echo "警告: 临时状态记录的 mode 未知（${_mode:-空}），只清记录，不动 DNS。" >&2
+      ;;
+  esac
+  # 临时模式启动的 agent（之前没在跑）要停掉；之前已在跑的 agent 不动。
+  if [ "$_was_active" != "1" ]; then
+    if agent_unit_exists; then
+      systemctl stop "$AGENT_UNIT" 2>/dev/null || true
+      echo "临时模式清理：已停掉临时模式启动的 agent。"
+    elif [ -x /usr/local/bin/dnsunlock ]; then
+      _pid=$(agent_pid_on_listen "$(agent_listen_from_config)" 2>/dev/null || true)
+      if [ -n "$_pid" ]; then kill "$_pid" 2>/dev/null || true; echo "临时模式清理：已停掉临时模式启动的 agent（进程 $_pid）。"; fi
+    fi
+  else
+    echo "临时模式清理：agent 在临时安装前已在运行，本次不动它。"
+  fi
+  # 清掉临时状态与开机 unit（unit 自己删自己，下次开机不再跑）。
+  rm -rf /etc/dnsunlock/temp-state 2>/dev/null || true
+  if [ -f /etc/systemd/system/dnsunlock-temp-restore.service ]; then
+    systemctl disable dnsunlock-temp-restore.service 2>/dev/null || true
+    rm -f /etc/systemd/system/dnsunlock-temp-restore.service
+    systemctl daemon-reload 2>/dev/null || true
+  fi
+  echo "临时模式清理完成。如仍有问题，先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved。"
+  return 0
+}
 # ---- 参数 ----
 YES=0
 WANT_DIR=""
@@ -803,10 +887,16 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --yes) YES=1; shift;;
     --backup) WANT_DIR="$2"; shift 2;;
+    --temp-cleanup)
+      # --temp 临时模式的退出清理（开机 oneshot unit 也调它）：按临时状态记录
+      # 恢复 DNS、停掉临时启动的 agent、清记录与 unit；尽力而为，恒返回 0。
+      cleanup_temp_state
+      exit 0;;
     --help|-h)
-      echo "用法: dnsunlock-restore-dns [--yes] [--backup <备份目录>]"
+      echo "用法: dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup]"
       echo "  --yes     非交互：默认还原最早的一份（原始状态），不再逐项确认"
       echo "  --backup  指定要还原的备份目录（须含 resolv.conf）"
+      echo "  --temp-cleanup  只清理 --temp 临时模式留下的运行时 DNS（按临时状态记录）"
       exit 0;;
     *) echo "未知参数: $1"; exit 1;;
   esac
@@ -888,8 +978,13 @@ if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   exit 0
 fi
 echo "没有找到永久备份（/var/lib/dnsunlock/backup/ 下无备份，也无 /etc/dnsunlock/resolv.conf.orig）。"
+if [ -f /etc/dnsunlock/temp-state/state ]; then
+  echo "但找到 --temp 临时模式的状态记录，按记录清理临时 DNS："
+  cleanup_temp_state
+  exit 0
+fi
 echo "如果你用的是 --temp 临时模式：临时 DNS 没有永久备份可还，清理办法："
-echo "  - systemd-resolved 的机器：systemctl restart systemd-resolved（resolvectl 设的 DNS 即失效）"
+echo "  - systemd-resolved 的机器：先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved（resolvectl 设的 DNS 即失效；直接 restart 时 agent 还占着 :53，resolved 会抢不到 stub）"
 echo "  - DHCP 的机器：重新拉 DHCP（如 dhclient -r; dhclient，或重启 NetworkManager）"
 echo "  - 或手动把 /etc/resolv.conf 改回原来的 DNS（临时模式直接写文件时若原先是软链，需手动恢复软链）"
 echo "临时模式重启后自动失效，不用专门清理也可以等重启。"

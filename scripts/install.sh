@@ -160,6 +160,13 @@ command -v sha256sum >/dev/null || { echo "需要 sha256sum，请先安装 coreu
 # 反过来，只看 ss 也不能证明 agent 一定绑得上。所以直接按 Go 的方式
 # （UDP+TCP，均设 SO_REUSEADDR）试绑一次监听地址，试得上就放行。
 # 返回 0=可绑定，1=被占，2=测不出来（没 python3 且 ss 也看不到）。
+# _is_wildcard_listen <listen>：监听地址的主机部分是通配符（:53 / 0.0.0.0:53 / [::]:53）时返回 0。
+_is_wildcard_listen() {
+  local host="${1%:*}"
+  host="${host#[}"; host="${host%]}"
+  case "$host" in ""|\*|0.0.0.0|::) return 0;; *) return 1;; esac
+}
+
 can_bind_listen() {
   local listen="$1" host port
   host="${listen%:*}"; port="${listen##*:}"
@@ -471,12 +478,76 @@ get_active_nm_connection_uuid() {
 # systemd-resolved 在跑 → resolvectl dns <主网卡> 127.0.0.1（重启/服务重启后失效）；
 # 否则直接写 resolv.conf，不加 chattr 锁、不停任何管理器、不动
 # netplan/cloud-init/dhclient。全程不写永久备份。
+# v0.1.6 临时状态记录（V016-01）：--temp 只改运行时 DNS，但退出/重启时要能
+# 清理干净，所以把“改了什么”记到 /etc/dnsunlock/temp-state/：
+#   state            mode=resolvectl|direct-write|none、iface、listen、
+#                    agent_was_active/agent_was_enabled、timestamp
+#   resolv.conf.orig 直接写文件路径的原 resolv.conf 内容（cp -L 解引用）
+#   resolv.conf.link 直接写文件路径、原先是软链时的目标
+# 永久接管成功时清掉这份记录（clear_temp_state）；临时退出时 restore 脚本
+# 按它清理（--temp-cleanup / 无永久备份分支）。
+write_temp_state() {
+  local mode="$1" iface="$2"
+  mkdir -p /etc/dnsunlock/temp-state 2>/dev/null || { echo "警告: 无法创建 /etc/dnsunlock/temp-state，重启后临时 DNS 可能无法自动清理" >&2; return 0; }
+  {
+    echo "mode=$mode"
+    echo "iface=$iface"
+    echo "listen=$DNS_LISTEN"
+    echo "agent_was_active=${TEMP_AGENT_WAS_ACTIVE:-0}"
+    echo "agent_was_enabled=${TEMP_AGENT_WAS_ENABLED:-0}"
+    echo "timestamp=$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || echo unknown)"
+  } > /etc/dnsunlock/temp-state/state 2>/dev/null || echo "警告: 无法写临时状态记录，重启后临时 DNS 可能无法自动清理" >&2
+}
+
+# clear_temp_state：清掉临时状态记录与开机清理 unit（永久接管成功时调用——
+# 永久接管取代了临时 DNS，旧记录再留着会误清理）。
+clear_temp_state() {
+  rm -rf /etc/dnsunlock/temp-state 2>/dev/null || true
+  if [ -f /etc/systemd/system/dnsunlock-temp-restore.service ]; then
+    systemctl disable dnsunlock-temp-restore.service 2>/dev/null || true
+    rm -f /etc/systemd/system/dnsunlock-temp-restore.service
+    systemctl daemon-reload 2>/dev/null || true
+  fi
+}
+
+# install_temp_boot_unit：直接写文件路径的临时模式才需要——重启后自动恢复
+# resolv.conf。oneshot unit，开机跑一次 --temp-cleanup（自己删自己）。
+# resolvectl 路径不需要（设置是运行时的，重启即失效）。
+# 注意：本函数跑在安装中途，restore 脚本要到安装末尾才写到
+# /usr/local/bin/dnsunlock-restore-dns；unit 只要在重启前存在即可，若安装
+# 中途被杀，unit 可能指向旧版/缺失的 restore 脚本（残留风险：开机清理不跑，
+# 临时 DNS 留到下次手动清理）。
+install_temp_boot_unit() {
+  cat > /etc/systemd/system/dnsunlock-temp-restore.service <<'EOF'
+[Unit]
+Description=dnsunlock temp DNS restore (one-shot, removes itself)
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/dnsunlock-restore-dns --temp-cleanup
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl enable dnsunlock-temp-restore.service 2>/dev/null || echo "警告: 临时清理 unit 启用失败，重启后请手动运行 dnsunlock-restore-dns 清理临时 DNS" >&2
+  echo "临时模式：已装开机清理 unit（dnsunlock-temp-restore.service），重启后自动恢复原 resolv.conf。"
+}
+
 write_temp_resolv_conf() {
   local link=""
+  # 先把原 resolv.conf 存到临时状态里，供退出/重启清理时恢复（V016-01）。
+  mkdir -p /etc/dnsunlock/temp-state 2>/dev/null || true
+  if [ -L /etc/resolv.conf ]; then
+    link=$(readlink /etc/resolv.conf)
+    printf '%s' "$link" > /etc/dnsunlock/temp-state/resolv.conf.link 2>/dev/null || true
+  else
+    rm -f /etc/dnsunlock/temp-state/resolv.conf.link
+  fi
+  cp -L /etc/resolv.conf /etc/dnsunlock/temp-state/resolv.conf.orig 2>/dev/null || true
   chattr -i /etc/resolv.conf 2>/dev/null || true
   if [ -L /etc/resolv.conf ]; then
     link=$(readlink /etc/resolv.conf)
-    echo "提示: 原 /etc/resolv.conf 是软链 -> $link，临时模式先去掉软链写静态文件；还原时手动恢复软链（ln -s $link /etc/resolv.conf）或重启 systemd-resolved。"
+    echo "提示: 原 /etc/resolv.conf 是软链 -> $link，临时模式先去掉软链写静态文件；退出时 dnsunlock-restore-dns 会按临时状态记录恢复软链。"
     rm -f /etc/resolv.conf
   fi
   if [ "${USE_VC:-0}" = "1" ]; then
@@ -493,6 +564,7 @@ apply_temp_dns() {
   if grep -qi "tailscale" /etc/resolv.conf 2>/dev/null || grep -q "nameserver 100.100.100.100" /etc/resolv.conf 2>/dev/null; then
     echo "注意: 检测到 /etc/resolv.conf 由 Tailscale 生成，临时模式也不改本机 DNS（会断 Tailscale 内网 DNS）。"
     echo "如需本机流量也走分流，请手动把其他机器的 DNS 指到本机，或在 Tailscale 之外再处理。"
+    write_temp_state none ""
     return 0
   fi
   probe_agent_transport "$_dl_host" "$_dl_port"
@@ -500,17 +572,22 @@ apply_temp_dns() {
     iface=$(get_primary_interface)
     if [ -n "$iface" ] && resolvectl dns "$iface" 127.0.0.1 2>/dev/null; then
       echo "临时模式：已用 resolvectl 把 $iface 的 DNS 设为 127.0.0.1（agent）。"
+      write_temp_state resolvectl "$iface"
     else
       echo "警告: resolvectl 设置失败，改直接写 resolv.conf（临时，不加锁）" >&2
       write_temp_resolv_conf
+      install_temp_boot_unit
+      write_temp_state direct-write ""
     fi
   else
     write_temp_resolv_conf
+    install_temp_boot_unit
+    write_temp_state direct-write ""
   fi
   echo "临时模式说明：本次只改了运行时 DNS，没有永久备份、没有 chattr 锁、没有停任何管理器。"
   echo "重启后失效（resolved 重启 / DHCP 续租 / 管理器运行时也可能失效）。"
   echo "要永久生效：重跑安装并选接管（本机系统 DNS 设为 127.0.0.1）。"
-  echo "要立即还原：systemctl restart systemd-resolved（resolved 机器）或重新拉 DHCP（如 dhclient -r; dhclient，或重启 NetworkManager），或手动把 /etc/resolv.conf 改回原来的 DNS。"
+  echo "要立即还原：运行 dnsunlock-restore-dns（按临时状态清理并恢复 DNS）；不要直接 systemctl restart systemd-resolved——agent 还占着 :53 时 resolved 会抢不到 stub。"
   verify_system_dns example.com || echo "警告: 临时模式接管后系统解析验证未通过（见上），请检查 agent 是否在跑；还原办法见上。" >&2
 }
 
@@ -651,7 +728,30 @@ if [ "$MODE" = "dns" ]; then
   _bind_rc=0
   can_bind_listen "$DNS_LISTEN" || _bind_rc=$?
   if [ "$_bind_rc" = 1 ]; then
-    if stub_only_conflict; then
+    if [ "${TEMP_MODE:-0}" = "1" ]; then
+      # 临时模式：绝不写持久 drop-in 关 stub（V016-01）——关 stub 要写
+      # /etc/systemd/resolved.conf.d/dnsunlock.conf 并重启 resolved，重启后
+      # stub 还关着、agent 还自启，系统 DNS 会死 / 分流变永久。
+      # 通配符监听被占时自动改走 127.0.0.1:53（不问——台架答案流固定，不许
+      # 多一个问题）；127.0.0.1:53 也被占就直接停下，给 --dns-listen 指引。
+      if _is_wildcard_listen "$DNS_LISTEN"; then
+        echo "临时模式：$DNS_LISTEN 被占（systemd-resolved 的 stub 或别的服务），不关 stub，自动改走 127.0.0.1:53（临时，不写持久状态）。"
+        DNS_LISTEN="127.0.0.1:53"
+        _bind_rc=0
+        can_bind_listen "$DNS_LISTEN" || _bind_rc=$?
+        if [ "$_bind_rc" = 1 ]; then
+          echo "临时模式：127.0.0.1:53 也被占，无法启动 agent；请用 --dns-listen 换个空闲端口（如 127.0.0.1:5353）后重跑，或先停掉占用的服务。" >&2
+          exit 1
+        elif [ "$_bind_rc" = 2 ]; then
+          echo "注意: 没装 python3，无法准确探测 127.0.0.1:53 是否可绑定；继续安装，启动后第 [4/6] 步会验证解析，不通会报错。"
+        else
+          echo "监听地址 $DNS_LISTEN 可绑定。"
+        fi
+      else
+        echo "临时模式：$DNS_LISTEN 已被占用（不关 stub、不改持久状态）：请用 --dns-listen 换个端口（如 127.0.0.1:5353），或先停掉占用的服务再重跑。" >&2
+        exit 1
+      fi
+    elif stub_only_conflict; then
       echo "检测到 systemd-resolved 的 stub 监听占着 127.0.0.53:53，agent 无法绑定 $DNS_LISTEN。"
       echo "可以只关掉 stub 监听（写 /etc/systemd/resolved.conf.d/dnsunlock.conf，DNSStubListener=no，并重启 systemd-resolved；不改 /etc/resolv.conf，不影响上游 DNS）。"
       if [ "${DNS_DISABLE_STUB:-}" = "y" ] || [ "${DNS_DISABLE_STUB:-}" = "Y" ] || ask_yes_no "是否关掉 systemd-resolved 的 stub 监听？"; then
@@ -831,7 +931,17 @@ EOF
 #    如需从外网访问，请在防火墙/安全组里只放行 allowlist 里的 IP。
 echo "[3/6] 启动服务（不自动放行防火墙 53，请按 allowlist 自行放行）..."
 systemctl daemon-reload
-systemctl enable --now dnsunlock-agent
+if [ "${TEMP_MODE:-0}" = "1" ]; then
+  # 临时模式：只 start 不 enable（V016-01）——enable 会让 agent 开机自启，
+  # 重启后还占着 :53，系统 DNS 就死了。记下启动前的状态，供临时退出清理
+  # （之前没在跑的 agent，退出时要停掉；之前已在跑的 agent 不动）。
+  TEMP_AGENT_WAS_ACTIVE=0; TEMP_AGENT_WAS_ENABLED=0
+  systemctl is-active --quiet dnsunlock-agent 2>/dev/null && TEMP_AGENT_WAS_ACTIVE=1
+  systemctl is-enabled --quiet dnsunlock-agent 2>/dev/null && TEMP_AGENT_WAS_ENABLED=1
+  systemctl start dnsunlock-agent
+else
+  systemctl enable --now dnsunlock-agent
+fi
 sleep 1
 systemctl --no-pager status dnsunlock-agent --lines=5 || true
 
@@ -923,6 +1033,9 @@ if [ "${TAKEOVER:-}" = "y" ] || [ "${TAKEOVER:-}" = "Y" ]; then
   # 第一次接管的备份就是原始状态、永不覆盖；/etc/dnsunlock/resolv.conf.orig
   # 只作为指向首份备份的兼容指针保留（do_backup 内只写一次）。
   do_backup "pre-takeover" || { echo "备份失败，已中止接管（未改任何文件），请检查磁盘 / 权限后重跑"; exit 1; }
+  # 之前临时模式留下的状态已作废（永久接管取代了临时 DNS）：清掉，避免
+  # 下次还原误把临时清理当永久清理，也避免开机 unit 把刚接管的 DNS 还原回去。
+  clear_temp_state
   # nsswitch：hosts: 行缺 dns 就补上（改前备份已在备份目录里）。
   ensure_nsswitch_dns
   # systemd-resolved
@@ -1822,6 +1935,90 @@ restore_legacy() {
   echo "已还原 /etc/resolv.conf <- /etc/dnsunlock/resolv.conf.orig"
 }
 
+# cleanup_temp_state：清理 --temp 临时模式留下的运行时 DNS（V016-01）。
+# 按 /etc/dnsunlock/temp-state/state 的记录来：
+#   resolvectl 模式：resolvectl revert <iface>（运行时设置，重启即失效，不动文件）；
+#   direct-write 模式：把 resolv.conf 从 temp-state/resolv.conf.orig 恢复
+#     （原先是软链时恢复软链 + 把内容写回目标），再清掉 temp-state 与开机 unit；
+#   none 模式：DNS 没动过，只清记录。
+# 若临时模式启动了 agent（agent_was_active=0），停掉它；之前已在跑的 agent 不动。
+# 尽力而为：哪步失败都警告并继续，最后仍清记录、返回 0（开机 unit 调用时不能失败）。
+# 注意：这里绝不能直接 systemctl restart systemd-resolved——agent 还占着 :53
+# 时 resolved 会抢不到 stub（正是 V016-01 的 P1）；要先停 agent，或用 resolvectl revert。
+cleanup_temp_state() {
+  local _state="/etc/dnsunlock/temp-state/state" _mode="" _iface="" _was_active="0" _link="" _tgt="" _pid=""
+  echo "临时模式清理：按 /etc/dnsunlock/temp-state 的记录恢复 DNS..."
+  if [ ! -f "$_state" ]; then
+    echo "临时模式清理：没有临时状态记录（/etc/dnsunlock/temp-state/state 不存在），无需清理。"
+    return 0
+  fi
+  _mode=$(sed -n 's/^mode=//p' "$_state" 2>/dev/null | head -1)
+  _iface=$(sed -n 's/^iface=//p' "$_state" 2>/dev/null | head -1)
+  _was_active=$(sed -n 's/^agent_was_active=//p' "$_state" 2>/dev/null | head -1)
+  case "$_mode" in
+    resolvectl)
+      if [ -n "$_iface" ] && command -v resolvectl >/dev/null 2>&1; then
+        if resolvectl revert "$_iface" 2>/dev/null; then
+          echo "临时模式清理：已 resolvectl revert $_iface（运行时 DNS 已恢复）。"
+        else
+          echo "警告: resolvectl revert $_iface 失败；可先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved 恢复。" >&2
+        fi
+      else
+        echo "警告: 无法 resolvectl revert（无网卡记录或无 resolvectl）；可先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved 恢复。" >&2
+      fi
+      ;;
+    direct-write)
+      if [ -f /etc/dnsunlock/temp-state/resolv.conf.orig ]; then
+        chattr -i /etc/resolv.conf 2>/dev/null || true
+        if [ -f /etc/dnsunlock/temp-state/resolv.conf.link ]; then
+          _link=$(cat /etc/dnsunlock/temp-state/resolv.conf.link 2>/dev/null || true)
+          rm -f /etc/resolv.conf
+          if [ -n "$_link" ]; then
+            ln -s "$_link" /etc/resolv.conf 2>/dev/null || true
+            case "$_link" in /*) _tgt="$_link" ;; *) _tgt="/etc/$_link" ;; esac
+            if [ ! -e "$_tgt" ]; then
+              mkdir -p "$(dirname "$_tgt")" 2>/dev/null || true
+              cp -L /etc/dnsunlock/temp-state/resolv.conf.orig "$_tgt" 2>/dev/null || echo "警告: 软链目标 $_tgt 不存在且写回失败，请手动恢复" >&2
+            fi
+            echo "临时模式清理：已恢复 /etc/resolv.conf 软链 -> $_link。"
+          fi
+        else
+          cp -L /etc/dnsunlock/temp-state/resolv.conf.orig /etc/resolv.conf 2>/dev/null || echo "警告: 恢复 /etc/resolv.conf 失败，请手动检查" >&2
+          echo "临时模式清理：已把 /etc/resolv.conf 从临时状态恢复。"
+        fi
+      else
+        echo "警告: 临时状态里没有原 resolv.conf 备份，无法恢复文件；请手动检查 /etc/resolv.conf。" >&2
+      fi
+      ;;
+    none)
+      echo "临时模式清理：临时安装时未改本机 DNS，无需恢复文件。"
+      ;;
+    *)
+      echo "警告: 临时状态记录的 mode 未知（${_mode:-空}），只清记录，不动 DNS。" >&2
+      ;;
+  esac
+  # 临时模式启动的 agent（之前没在跑）要停掉；之前已在跑的 agent 不动。
+  if [ "$_was_active" != "1" ]; then
+    if agent_unit_exists; then
+      systemctl stop "$AGENT_UNIT" 2>/dev/null || true
+      echo "临时模式清理：已停掉临时模式启动的 agent。"
+    elif [ -x /usr/local/bin/dnsunlock ]; then
+      _pid=$(agent_pid_on_listen "$(agent_listen_from_config)" 2>/dev/null || true)
+      if [ -n "$_pid" ]; then kill "$_pid" 2>/dev/null || true; echo "临时模式清理：已停掉临时模式启动的 agent（进程 $_pid）。"; fi
+    fi
+  else
+    echo "临时模式清理：agent 在临时安装前已在运行，本次不动它。"
+  fi
+  # 清掉临时状态与开机 unit（unit 自己删自己，下次开机不再跑）。
+  rm -rf /etc/dnsunlock/temp-state 2>/dev/null || true
+  if [ -f /etc/systemd/system/dnsunlock-temp-restore.service ]; then
+    systemctl disable dnsunlock-temp-restore.service 2>/dev/null || true
+    rm -f /etc/systemd/system/dnsunlock-temp-restore.service
+    systemctl daemon-reload 2>/dev/null || true
+  fi
+  echo "临时模式清理完成。如仍有问题，先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved。"
+  return 0
+}
 # ---- 参数 ----
 YES=0
 WANT_DIR=""
@@ -1829,10 +2026,16 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --yes) YES=1; shift;;
     --backup) WANT_DIR="$2"; shift 2;;
+    --temp-cleanup)
+      # --temp 临时模式的退出清理（开机 oneshot unit 也调它）：按临时状态记录
+      # 恢复 DNS、停掉临时启动的 agent、清记录与 unit；尽力而为，恒返回 0。
+      cleanup_temp_state
+      exit 0;;
     --help|-h)
-      echo "用法: dnsunlock-restore-dns [--yes] [--backup <备份目录>]"
+      echo "用法: dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup]"
       echo "  --yes     非交互：默认还原最早的一份（原始状态），不再逐项确认"
       echo "  --backup  指定要还原的备份目录（须含 resolv.conf）"
+      echo "  --temp-cleanup  只清理 --temp 临时模式留下的运行时 DNS（按临时状态记录）"
       exit 0;;
     *) echo "未知参数: $1"; exit 1;;
   esac
@@ -1914,8 +2117,13 @@ if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   exit 0
 fi
 echo "没有找到永久备份（/var/lib/dnsunlock/backup/ 下无备份，也无 /etc/dnsunlock/resolv.conf.orig）。"
+if [ -f /etc/dnsunlock/temp-state/state ]; then
+  echo "但找到 --temp 临时模式的状态记录，按记录清理临时 DNS："
+  cleanup_temp_state
+  exit 0
+fi
 echo "如果你用的是 --temp 临时模式：临时 DNS 没有永久备份可还，清理办法："
-echo "  - systemd-resolved 的机器：systemctl restart systemd-resolved（resolvectl 设的 DNS 即失效）"
+echo "  - systemd-resolved 的机器：先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved（resolvectl 设的 DNS 即失效；直接 restart 时 agent 还占着 :53，resolved 会抢不到 stub）"
 echo "  - DHCP 的机器：重新拉 DHCP（如 dhclient -r; dhclient，或重启 NetworkManager）"
 echo "  - 或手动把 /etc/resolv.conf 改回原来的 DNS（临时模式直接写文件时若原先是软链，需手动恢复软链）"
 echo "临时模式重启后自动失效，不用专门清理也可以等重启。"
