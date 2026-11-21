@@ -1,0 +1,10 @@
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261121-122612_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-122612_pre-restore
+从备份还原: /var/lib/dnsunlock/backup/20261121-122612_pre-takeover/（pre-takeover，2026-11-21T12:26:12+0000）
+还原前 agent 在运行（监听 :53），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）...
+跳过 NM 重载（备份时未在跑或无 nmcli）
+跳过 resolvconf 重载（备份时未在跑）
+已还原 /etc/resolv.conf <- /var/lib/dnsunlock/backup/20261121-122612_pre-takeover//resolv.conf
+已还原但验证未通过（getent hosts example.com 无结果，请检查 DNS 配置）
+agent 还原前在运行（监听 :53），现保持停止：systemd-resolved 已重新占用 :53（stub 127.0.0.53），agent 的通配符 :53 无法同时绑定。
+如需继续用 agent 分流，请重新执行安装脚本（它会重新关掉 stub 并接管）；只想恢复系统 DNS 的话，现在已经好了。

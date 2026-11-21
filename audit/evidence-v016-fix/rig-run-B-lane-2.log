@@ -1,0 +1,186 @@
+== 构建 dnsunlock（amd64）==
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+== 起 panel（宿主 http://127.0.0.1:18180，上游 198.19.0.1）==
+== 面板里登记服务器/节点/规则 ==
+panel 就绪：server=srv-1795260732279931273 node=node-1795260732394923726 规则 tiktok -> 203.0.113.99
+== 准备台架文件（/var/lib/machines/v016-test/root/rig）==
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+warning: both GOPATH and GOROOT are the same directory (/home/hatch/go); see https://go.dev/wiki/InstallTroubleshooting
+== 生成答案流（24 行，见本脚本头答案表）==
+== 进 chroot 跑台架（script 分配 pty 供 /dev/tty 提问）==
+y
+y
+y
+y
+y
+y
+y
+not-a-url
+http://127.0.0.1:18180
+y
+y
+y
+
+y
+
+y
+y
+y
+y
+y
+y
+y
+y
+y
+=== S0 基线：agent 直连 DNS ===
+[PASS] S0 dig @agent tiktok.com 返回规则 IP
+[PASS] S0 dig @agent example.com 走上游（非规则 IP）
+[PASS] S0 基线 getent tiktok.com 不走 agent（走上游）
+[PASS] S0 基线 getent example.com 有结果
+[PASS] S0 停 agent 后 :53 已释放（防级联占用）
+=== S1b stub-only 接管（127.0.0.53:53 被占）===
+[PASS] S1b bindhold 已占住 127.0.0.53:53
+bind fail: listen udp :53: bind: address already in use
+警告: 停掉上个 agent 后 :53 仍被占（本次安装的端口检查可能失败）
+是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] [PASS] S1b install rc=0
+[PASS] S1b 提示关 stub 并确认已关
+[PASS] S1b drop-in 已写 DNSStubListener=no
+[PASS] S1b bindhold 已被 restart 干掉
+[PASS] S1b 127.0.0.53:53 已释放
+[PASS] S1b 备份目录恰好 1 个
+[PASS] S1b metadata 标签 pre-takeover
+[PASS] S1b metadata 当时 DNS 含 198.19.0.1
+[PASS] S1b metadata 含 resolved 后端
+[PASS] S1b 备份的 resolv.conf 就是原文件
+[PASS] S1b resolv.conf 已是 127.0.0.1
+[PASS] S1b 有 use-vc（沙箱 UDP 回环不通，探测判 TCP，见文件头）
+[PASS] S1b NM conf.d 已写 dns=none
+[PASS] S1b chattr +i 已锁
+[PASS] S1b systemctl 调过 restart resolved
+[PASS] S1b systemctl 调过 reload NetworkManager
+[PASS] S1b nmcli 被调过（取 UUID）
+[PASS] S1b 接管后 getent tiktok.com 返回规则 IP
+[PASS] S1b 接管后 getent example.com 仍走上游
+[PASS] S1b .orig 兼容指针内容是原文件
+=== S2 二次接管：首份备份永不覆盖 ===
+是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] [PASS] S2 install rc=0
+[PASS] S2 备份目录变成 2 个
+[PASS] S2 .orig 仍是原始内容
+[PASS] S2 最早一份备份仍是原始内容
+[PASS] S2 最新一份备份是本次接管前状态（reset 后 base）
+=== S3 还原回滚（--yes，默认最早一份）===
+[PASS] S3 restore rc=0
+[PASS] S3 resolv.conf 已还原为原文件
+[PASS] S3 NM dns=none 配置已删
+[PASS] S3 resolved drop-in 已删
+[PASS] S3 chattr 锁已解
+[PASS] S3 还原后验证通过
+[PASS] S3 还原后 getent tiktok.com 不再是规则 IP
+[PASS] S3 还原后 getent example.com 有结果
+[PASS] S3 还原前自动备份了当前状态（备份数 3）
+=== S4 --temp：resolvectl 路径 ===
+[PASS] S4 install rc=0
+[PASS] S4 resolvectl 被调 dns <网卡> 127.0.0.1
+[PASS] S4 markers 含 127.0.0.1
+[PASS] S4 未写永久备份
+[PASS] S4 resolv.conf 未动（resolvectl 路径不写文件）
+[PASS] S4 输出说明临时模式
+[PASS] S4 输出说明重启后失效
+=== S5 --temp：resolved 未跑，直接写文件 ===
+[PASS] S5 install rc=0
+[PASS] S5 resolv.conf 已写 127.0.0.1
+[PASS] S5 未加 chattr 锁
+[PASS] S5 未写永久备份
+[PASS] S5 输出说明临时模式
+=== S6 缺 dig：警告 + 继续安装 ===
+是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] [PASS] S6 install rc=0
+[PASS] S6 输出缺 dig 警告
+[PASS] S6 输出继续安装
+[PASS] S6 输出给手动验证命令
+[PASS] S6 接管仍完成
+[PASS] S6 输出升级处理（验证失败后 disable resolved）
+[PASS] S6 输出验证未通过大声警告
+[PASS] S6 清理：还原回原文件
+=== S7a 手动输入：非法地址拒绝 ===
+手动输入面板地址（如 http://203.0.113.5:8080，面板和 agent 在同一台机器上时可用 http://127.0.0.1:8080；回车放弃）: [PASS] S7a install rc=1
+[PASS] S7a 报错面板地址格式不对
+=== S7b 手动输入：合法地址继续安装 ===
+手动输入面板地址（如 http://203.0.113.5:8080，面板和 agent 在同一台机器上时可用 http://127.0.0.1:8080；回车放弃）: 是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] [PASS] S7b install rc=0
+[PASS] S7b 输出已自动改走手动地址
+[PASS] S7b 接管完成
+[PASS] S7b 接管后 getent 规则 IP
+[PASS] S7b 清理：还原回原文件
+=== S8 摘要确认默认 N：取消接管 ===
+是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] [PASS] S8 install rc=0（取消接管仍算安装完成）
+[PASS] S8 输出已取消接管
+[PASS] S8 未写备份
+[PASS] S8 resolv.conf 未动
+=== S9a hpve-init：默认 N，取消接管 ===
+是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] [PASS] S9a install rc=0
+[PASS] S9a 输出 hpve-init 提示
+[PASS] S9a 未写备份
+[PASS] S9a resolv.conf 未动
+=== S9b hpve-init：确认后继续接管 ===
+是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] [PASS] S9b install rc=0
+[PASS] S9b 接管完成
+[PASS] S9b 备份 metadata 含原 DNS 1.1.1.1
+[FAIL] S9b 清理：还原回 hpve 文件
+=== S10 nsswitch：hosts 行补 dns ===
+[PASS] S10 前置：hosts 行无 dns
+是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] [PASS] S10 install rc=0
+[PASS] S10 hosts 行已补 dns
+[PASS] S10 还原后 nsswitch 回到无 dns
+[PASS] S10 还原后 drop-in 已删（stash 记 absent）
+=== S11 升级路径：验证不走 agent → disable --now resolved ===
+是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] [PASS] S11 install rc=0
+[PASS] S11 输出升级处理
+[PASS] S11 输出验证未通过警告
+[PASS] S11 systemctl 记了 disable --now resolved
+[PASS] S11 resolv.conf 仍是 127.0.0.1
+[PASS] S11 还原后验证通过
+[PASS] S11 还原回原文件
+=== S12 Tailscale 守卫 ===
+[PASS] S12 install rc=0
+[PASS] S12 输出 Tailscale 提示
+[PASS] S12 未写备份
+[PASS] S12 resolv.conf 未动
+=== S13 还原 --backup 指定备份 ===
+是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] [PASS] S13 install rc=0
+[PASS] S13 restore rc=0
+[PASS] S13 resolv.conf 等于指定备份的内容
+[PASS] S13 默认还原回原文件
+=== S14 函数级：validate_ipv4 / valid_panel_url / probe / UUID / verify ===
+[PASS] S14 函数提取成功
+[PASS] S14 提取的函数 bash -n 通过
+[PASS] S14 validate_ipv4 1.2.3.4 通过
+[PASS] S14 validate_ipv4 999.1.1.1 拒绝
+[PASS] S14 validate_ipv4 1.2.3 拒绝
+[PASS] S14 validate_ipv4 1.2.3.4.5 拒绝
+[PASS] S14 validate_ipv4 空拒绝
+[PASS] S14 validate_ipv4 0.0.0.0 通过
+[PASS] S14 valid_panel_url http://203.0.113.5:8080 通过
+[PASS] S14 valid_panel_url 999.1.1.1 拒绝
+[PASS] S14 valid_panel_url https 域名通过
+[PASS] S14 valid_panel_url IPv6 通过
+[PASS] S14 valid_panel_url ftp 拒绝
+[PASS] S14 valid_panel_url 端口超范围拒绝
+[PASS] S14 valid_panel_url 端口非数字拒绝
+[PASS] S14 probe UDP 不通 TCP 通 → USE_VC=1
+[PASS] S14 probe UDP 通 → USE_VC=0
+[PASS] S14 probe 无 dig → USE_VC=0
+[PASS] S14 UUID 按默认路由接口取 eth0 的
+[PASS] S14 UUID 无默认路由回退第一个活动连接
+[PASS] S14 verify getent 成功 → rc 0
+[PASS] S14 verify getent 失败 → rc 1
+[PASS] S14 verify 无工具 → rc 2
+[FAIL] S14 verify_rule_domain 规则 IP 一致 → rc 0
+[PASS] S14 verify_rule_domain 非规则 IP → rc 1
+=== S15 无永久备份：提示临时清理办法 ===
+[PASS] S15 restore rc=0
+[PASS] S15 提示临时模式清理办法
+[PASS] S15 提示 restart resolved
+=== RIG SUMMARY: PASS=125 FAIL=2 ===
+失败项：
+  - S9b 清理：还原回 hpve 文件
+  - S14 verify_rule_domain 规则 IP 一致 → rc 0
+== 台架退出码: 1（日志：chroot 内 /root/rig/logs/，宿主路径 /var/lib/machines/v016-test/root/rig/logs/；panel 日志 /tmp/rig-panel/panel.log）==
