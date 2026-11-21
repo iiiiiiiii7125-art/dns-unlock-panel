@@ -621,7 +621,8 @@ clear_temp_state() {
 # 注意：本函数跑在安装中途，restore 脚本要到安装末尾才写到
 # /usr/local/bin/dnsunlock-restore-dns；unit 只要在重启前存在即可，若安装
 # 中途被杀，unit 可能指向旧版/缺失的 restore 脚本（残留风险：开机清理不跑，
-# 临时 DNS 留到下次手动清理）。
+# 临时 DNS 留到下次手动清理）。state 文件已在调本函数之前写好（R2-08），
+# 所以不存在“unit 在、state 不在”的窗口。
 install_temp_boot_unit() {
   cat > /etc/systemd/system/dnsunlock-temp-restore.service <<'EOF'
 [Unit]
@@ -691,13 +692,16 @@ apply_temp_dns() {
     else
       echo "警告: resolvectl 设置失败，改直接写 resolv.conf（临时，不加锁）" >&2
       write_temp_resolv_conf
-      install_temp_boot_unit
+      # R2-08：先写 state 文件再装开机 unit——反过来时进程若在此时被杀，
+      # unit 已存在而 state 文件不存在，开机清理认不出临时状态。
       write_temp_state direct-write ""
+      install_temp_boot_unit
     fi
   else
     write_temp_resolv_conf
-    install_temp_boot_unit
+    # R2-08：同上，先写 state 再装 unit。
     write_temp_state direct-write ""
+    install_temp_boot_unit
   fi
   echo "临时模式说明：本次只改了运行时 DNS，没有永久备份、没有 chattr 锁、没有停任何管理器。"
   echo "重启后失效（resolved 重启 / DHCP 续租 / 管理器运行时也可能失效）。"
