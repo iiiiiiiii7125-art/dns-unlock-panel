@@ -267,8 +267,9 @@ verify_system_dns() {
 # 无规则、取不到、或规则是 nameserver 模式（答案不改写）时跳过，只提示手动核对。
 # 失败只警告，不致命（规则 IP 也可能因故障切换而变化）。
 verify_rule_domain() {
-  local cfg="/tmp/dnsunlock-agent-config.json" domain="" node_ip="" out=""
-  curl -fsSL -K "$AUTH_CFG" --max-time 8 "$PANEL_BASE/api/v1/agent/config?server_id=$SERVER_ID" -o "$cfg" 2>/dev/null || { echo "  规则域名验证跳过: 拉不到 agent 配置（稍后手动验证规则域名）"; return 2; }
+  local cfg domain="" node_ip="" out=""
+  cfg="$(mktemp /tmp/dnsunlock-agent-config.XXXXXX)" || { echo "  规则域名验证跳过: 建临时文件失败（稍后手动验证规则域名）"; return 2; }
+  curl -fsSL -K "$AUTH_CFG" --max-time 8 "$PANEL_BASE/api/v1/agent/config?server_id=$SERVER_ID" -o "$cfg" 2>/dev/null || { rm -f "$cfg"; echo "  规则域名验证跳过: 拉不到 agent 配置（稍后手动验证规则域名）"; return 2; }
   domain=$(sed -n 's/.*"domains":\["\([^"]*\)".*/\1/p' "$cfg" | head -1)
   node_ip=$(sed -n 's/.*"node_ip":"\([^"]*\)".*/\1/p' "$cfg" | head -1)
   rm -f "$cfg"
