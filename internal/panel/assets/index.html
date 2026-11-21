@@ -171,7 +171,7 @@ input[type=checkbox]{width:auto}
       <button onclick="addNode()">添加 IP</button>
     </div>
     <table><thead><tr><th>名称</th><th>IP</th><th>地区</th><th>状态</th><th>延迟</th><th>备注</th><th></th></tr></thead><tbody id="nodesBody"></tbody></table>
-    <p class="muted">想让某台自己的 VPS 亲自做解锁出口：点每行“复制安装命令”，到那台机器粘贴执行一次就装好 SNI 代理（allowlist 已按已登记的 DNS 服务器公网 IP 填好）；SNI 代理要占 443 端口，被 nginx/Caddy 占了要先让出来。还没登记任何 DNS 服务器时别点：命令装到一半会卡在 agent token 那步，先去「DNS 服务器」页登记一台。</p>
+    <p class="muted">想让某台自己的 VPS 亲自做解锁出口：点每行“复制安装命令”，到那台机器粘贴执行就装好 SNI 代理（allowlist 已按已登记的 DNS 服务器公网 IP 填好）。执行时还会停下来问 agent token：填任意一台已登记 DNS 服务器的 token（在「DNS 服务器」页点“显示 token”查看）；没有可交互终端（如自动化执行）时会直接退出。还没登记任何 DNS 服务器时别点：命令装到一半会卡在 agent token 那步，先去「DNS 服务器」页登记一台。SNI 代理要占 443 端口，被 nginx/Caddy 占了要先让出来；allowlist 用的是登记的 IP，请确认是 DNS 服务器的公网出口 IP。</p>
   </div>
 
   <div id="pane-public" class="card hidden">
@@ -196,7 +196,7 @@ input[type=checkbox]{width:auto}
     <p class="muted">自测只做连通性检查：对每条已设规则的平台域名，用 agent 自己的解析逻辑查出 IP，再探该 IP 的 :443 连通性。通只说明能连通，不证明流媒体一定接受该流量。</p>
     <table><thead><tr><th>名称</th><th>IP</th><th>默认解锁 IP</th><th>状态</th><th>最后在线</th><th>配置版本</th><th>server_id / agent token（装机用）</th><th></th></tr></thead><tbody id="serversBody"></tbody></table>
     <h3>可选：把自己的 VPS 变成解锁节点（SNI 代理）</h3>
-    <p class="muted">面板和 DNS 分流本身不需要这一步。只有当你想让某台自己的 VPS 亲自做解锁出口时，才在那台机器上执行：<br><code id="unlockCmd"></code> <button class="ghost" onclick="copyUnlock()">复制</button><br>还没登记 DNS 服务器时先登记一台再装，否则命令会卡在 agent token 那步。</p>
+    <p class="muted">面板和 DNS 分流本身不需要这一步。只有当你想让某台自己的 VPS 亲自做解锁出口时，才在那台机器上执行：<br><code id="unlockCmd"></code> <button class="ghost" onclick="copyUnlock()">复制</button><br>还没登记 DNS 服务器时先登记一台再装，否则命令会卡在 agent token 那步。执行时会问 agent token，填任意一台已登记 DNS 服务器的 token。</p>
   </div>
 
   <div id="pane-events" class="card hidden">
@@ -786,7 +786,7 @@ async function copyNodeInstall(){
   if(ips.length)c+='DNS_SNI_ALLOWLIST='+sq(ips.join(','))+' ';
   c+='bash -s -- --unlock-node';
   navigator.clipboard.writeText(c);
-  alert(ips.length?'安装命令已复制，到节点机器粘贴执行即可。':'安装命令已复制（未登记 DNS 服务器，allowlist 未填，安装时按提示输入）。');
+  alert(ips.length?'安装命令已复制，到节点机器粘贴执行。执行时会问 agent token：填任意一台已登记 DNS 服务器的 token（「DNS 服务器」页可查看）。':'安装命令已复制（未登记 DNS 服务器，allowlist 未填，安装时按提示输入）。');
 }
 async function addServer(){
   const name=$('s-name').value.trim(),ip=$('s-ip').value.trim(),def=$('s-defip').value.trim(),allow=$('s-allow').value.trim();
