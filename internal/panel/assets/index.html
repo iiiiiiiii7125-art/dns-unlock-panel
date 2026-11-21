@@ -127,6 +127,11 @@ input[type=checkbox]{width:auto}
       <button class="ghost" onclick="setCat('香港专区')">香港专区</button>
       <button class="ghost" onclick="setCat('其他')">其他</button>
     </div>
+    <div class="row">
+      <button class="ghost" onclick="selftestAll()">自测全部</button>
+      <span class="muted">对所有在线 DNS 服务器各跑一次连通性自测；自测只验证能否连通，不证明流媒体一定接受该流量。结果见「DNS 服务器」页每台服务器下方。</span>
+    </div>
+    <p class="muted" id="selftestAllStatus"></p>
     <h3 style="margin-bottom:8px">热门服务 <span class="muted">— 点一张卡片选出口节点，改完点底部“保存配置”才生效；上面搜索框也能筛卡片</span></h3>
     <div id="hotCards" class="hot-grid"></div>
     <div id="cardEditor" class="hidden"></div>
@@ -187,6 +192,7 @@ input[type=checkbox]{width:auto}
     <p><code id="srvInstallCmd"></code> <button class="ghost" id="srvInstallCopyBtn" onclick="copySrvInstall()" style="display:none">复制安装命令</button></p>
     <p class="muted">安装命令里带有 token，执行后会进目标机器的 shell 历史；token 泄露了就删了这台服务器重新登记，会换新的。</p>
     <p class="muted">安装脚本会在面板 443 不通时自动改走面板的 :8080（每步最多等 8 秒），无需手动处理。</p>
+    <p class="muted">自测只做连通性检查：对每条已设规则的平台域名，用 agent 自己的解析逻辑查出 IP，再探该 IP 的 :443 连通性。通只说明能连通，不证明流媒体一定接受该流量。</p>
     <table><thead><tr><th>名称</th><th>IP</th><th>默认解锁 IP</th><th>状态</th><th>最后在线</th><th>配置版本</th><th>server_id / agent token（装机用）</th><th></th></tr></thead><tbody id="serversBody"></tbody></table>
     <h3>可选：把自己的 VPS 变成解锁节点（SNI 代理）</h3>
     <p class="muted">面板和 DNS 分流本身不需要这一步。只有当你想让某台自己的 VPS 亲自做解锁出口时，才在那台机器上执行：<br><code id="unlockCmd"></code> <button class="ghost" onclick="copyUnlock()">复制</button></p>
@@ -650,11 +656,81 @@ async function toggleSrvToken(id){
   if(SRV_REVEALED[id]){delete SRV_REVEALED[id];renderServers();return}
   const j=await api('/api/v1/servers/'+id+'/reveal');SRV_REVEALED[id]=j.token;renderServers();
 }
+// v0.1.6 item 4：服务器行加“自测”按钮，结果就地展开在行下方（不跳页）。
+// 结果来自 GET /api/v1/servers 每台 server 的 last_selftest（Go 线按契约提供）；
+// 进行中状态只存在本地 SELFTEST，轮询只拉 /api/v1/servers 并重绘本表，不触发整页 refresh。
+const SELFTEST={}; // serverId -> {request_id, state:'pending'|'done'|'error', error}
 function renderServers(){
-  $('serversBody').innerHTML=SERVERS.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.ip||'')}</td><td>${esc(s.default_unlock_ip||'')}</td>
+  $('serversBody').innerHTML=SERVERS.map(s=>{
+    const st=SELFTEST[s.id];
+    const online=s.status==='online';
+    const stBtn=online
+      ? `<button class="ghost" onclick="runSelftest('${s.id}')" ${(st&&st.state==='pending')?'disabled':''}>${(st&&st.state==='pending')?'自测中…':'自测'}</button>`
+      : `<button class="ghost" disabled title="离线服务器无法自测">自测</button>`;
+    const main=`<tr><td>${esc(s.name)}</td><td>${esc(s.ip||'')}</td><td>${esc(s.default_unlock_ip||'')}</td>
   <td>${s.status==='online'?'<span class="badge ok">在线</span>':s.status==='offline'?'<span class="badge bad">离线</span>':'<span class="badge dim">未知</span>'}</td>
   <td>${esc(s.last_seen||'—')}</td><td>v${s.config_version||0}</td><td><code>${esc(s.id)}</code><br>${SRV_REVEALED[s.id]?'<code>'+esc(SRV_REVEALED[s.id])+'</code>':'<span class="muted">token 已隐藏</span>'} <button class="ghost" onclick="toggleSrvToken('${s.id}')">${SRV_REVEALED[s.id]?'隐藏':'显示 token'}</button></td>
-  <td><button onclick="copyServerInstall('${s.id}')">复制安装命令</button> <button class="danger" onclick="delServer('${s.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="8" class="muted">还没有 DNS 服务器：先在 VPS 上执行一键安装命令，或先登记再装机</td></tr>';
+  <td><button onclick="copyServerInstall('${s.id}')">复制安装命令</button> <button class="danger" onclick="delServer('${s.id}')">删除</button> ${stBtn}</td></tr>`;
+    return main+selftestDetailRow(s,st);
+  }).join('')||'<tr><td colspan="8" class="muted">还没有 DNS 服务器：先在 VPS 上执行一键安装命令，或先登记再装机</td></tr>';
+}
+// v0.1.6 item 4：自测详情行。进行中/失败读本地 SELFTEST；已完成读 s.last_selftest。
+function selftestDetailRow(s,st){
+  if(st&&st.state==='pending')return `<tr><td colspan="8" class="muted">自测进行中（请求 ${esc(st.request_id||'—')}）…正在等 agent 回传结果，最长约 90 秒；本行会自动更新，不用刷新页面。</td></tr>`;
+  if(st&&st.state==='error')return `<tr><td colspan="8" style="color:#991b1b">自测失败：${esc(st.error||'')}</td></tr>`;
+  const lt=s.last_selftest;
+  if(!lt)return '';
+  if(st&&st.state==='done'&&!lt.results)return `<tr><td colspan="8" class="muted">自测已完成（${esc(lt.ran_at||'')}），但返回里没有结果明细（后端 last_selftest.results 缺失）。</td></tr>`;
+  const rows=(lt.results||[]).map(r=>{
+    const nm=platformName(r.platform_id);
+    const lat=(typeof r.latency_ms==='number'&&r.latency_ms>=0)?` (${r.latency_ms} ms)`:'';
+    const verdict=r.ok?'<span class="badge ok">通</span>':'<span class="badge bad">不通</span>';
+    return `<div><b>${esc(nm)}</b> ${esc(r.domain||'')} → ${esc(r.resolved_ip||'—')} ${verdict}${lat}${r.error?` <span class="muted">${esc(r.error)}</span>`:''}</div>`;
+  }).join('')||'<div class="muted">本次自测无结果（没有已设规则的平台）。</div>';
+  return `<tr><td colspan="8"><div class="muted">自测结果（${esc(lt.ran_at||'')}，请求 ${esc(lt.request_id||'—')}）— 只验证能否连通，不证明流媒体一定接受该流量。</div>${rows}</td></tr>`;
+}
+function platformName(pid){const p=PLATFORMS.find(x=>x.id===pid);return p?(p.name_zh?p.name+' '+p.name_zh:p.name):pid}
+// v0.1.6 item 4：POST /api/v1/servers/{id}/selftest 入队（返回 {request_id}），
+// 随后每 3 秒只拉 GET /api/v1/servers，按 request_id 等 last_selftest，最多 90 秒。
+async function runSelftest(id){
+  const cur=SELFTEST[id];
+  if(cur&&cur.state==='pending')return;
+  SELFTEST[id]={request_id:'',state:'pending',error:''};
+  renderServers();
+  let req='';
+  try{
+    const j=await api('/api/v1/servers/'+id+'/selftest',{method:'POST'});
+    if(!j||typeof j!=='object'||!j.request_id)throw new Error(j&&j.error?j.error:'后端未返回 request_id（自测接口可能尚未部署）');
+    req=j.request_id;SELFTEST[id].request_id=req;
+  }catch(e){SELFTEST[id]={request_id:'',state:'error',error:e.message};renderServers();updateSelftestAllStatus();return}
+  for(let i=0;i<30;i++){
+    await new Promise(r=>setTimeout(r,3000));
+    if(!SELFTEST[id]||SELFTEST[id].state!=='pending')return;
+    try{
+      SERVERS=await api('/api/v1/servers');
+      const s=SERVERS.find(x=>x.id===id);
+      if(s&&s.last_selftest&&s.last_selftest.request_id===req){SELFTEST[id].state='done';renderServers();updateSelftestAllStatus();return}
+      renderServers();
+    }catch(e){/* 轮询单次失败继续等，不打断 */}
+  }
+  SELFTEST[id]={request_id:req,state:'error',error:'90 秒内未收到结果（agent 可能未取到请求或测试耗时较长），可稍后查看本行下方结果。'};
+  renderServers();updateSelftestAllStatus();
+}
+// v0.1.6 item 4：规则页“自测全部”——对所有在线 server 各发一次自测，结果仍在服务器页各行下方展开。
+async function selftestAll(){
+  const online=SERVERS.filter(s=>s.status==='online');
+  if(!online.length){$('selftestAllStatus').textContent='没有在线的 DNS 服务器，无法自测。';return}
+  $('selftestAllStatus').textContent=`已对 ${online.length} 台在线服务器发起自测，结果见「DNS 服务器」页每台服务器下方…`;
+  online.forEach(s=>runSelftest(s.id));
+}
+function updateSelftestAllStatus(){
+  const el=$('selftestAllStatus');if(!el)return;
+  const ids=SERVERS.filter(s=>s.status==='online').map(s=>s.id);
+  const done=ids.filter(id=>SELFTEST[id]&&SELFTEST[id].state==='done').length;
+  const err=ids.filter(id=>SELFTEST[id]&&SELFTEST[id].state==='error').length;
+  const pend=ids.filter(id=>SELFTEST[id]&&SELFTEST[id].state==='pending').length;
+  if(!done&&!err&&!pend)return;
+  el.textContent=`自测全部：${done} 台完成，${err} 台失败，${pend} 台进行中（共 ${ids.length} 台在线）。详情见「DNS 服务器」页每台服务器下方。`;
 }
 // 面板自动生成的安装命令：token、名称、默认解锁 IP、allowlist 都填好了，
 // 目标 VPS 上粘贴执行即可，不再逐项问。单引号转义防命令注入。
