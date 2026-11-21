@@ -187,6 +187,10 @@ type DNSServer struct {
 	Status          string `json:"status"` // unknown | online | offline
 	LastSeen        string `json:"last_seen,omitempty"`
 	ConfigVersion   int64  `json:"config_version"`
+	// LastSelftest is the newest self-test result this server reported
+	// (null when never tested). It holds resolved unlock IPs in full:
+	// it is only ever returned on the admin-authenticated servers API.
+	LastSelftest *SelftestResult `json:"last_selftest,omitempty"`
 }
 
 // FailoverEvent records an automatic node switch. It contains no query data.
@@ -206,6 +210,11 @@ type AgentConfig struct {
 	Upstream string `json:"upstream"`
 	// Rules resolved to concrete IPs: each entry is one platform.
 	Rules []AgentRule `json:"rules"`
+	// SelftestRequest, when set, asks the agent to run one connectivity
+	// self-test on its next poll and report back via heartbeat. The
+	// panel sends it once (consumed on delivery); the agent dedupes by
+	// ID so a repeated delivery never re-runs the same request.
+	SelftestRequest *SelftestRequest `json:"selftest_request,omitempty"`
 	// DefaultUnlockIP is the fallback when a rule names a region with no
 	// enabled node in it (P1-07). It is NOT used for platforms with no
 	// rule at all — those stay on upstream. Empty = no fallback.
@@ -252,6 +261,36 @@ type AgentHeartbeat struct {
 	Nodes    []NodeHealth    `json:"nodes,omitempty"`
 	Events   []FailoverEvent `json:"events,omitempty"`
 	Counters AgentCounters   `json:"counters,omitempty"`
+	// SelftestResult carries the result of a SelftestRequest the panel
+	// sent earlier (sent once, with the next heartbeat after the run).
+	SelftestResult *SelftestResult `json:"selftest_result,omitempty"`
+}
+
+// SelftestRequest asks one agent to run a connectivity self-test.
+// Delivered inside AgentConfig; reported back in AgentHeartbeat.
+type SelftestRequest struct {
+	ID          string `json:"id"`
+	RequestedAt string `json:"requested_at"` // RFC3339 UTC
+}
+
+// SelftestResultItem is one platform's row: domain -> resolved IP -> ok?
+// The UI lists these verbatim, one row per platform with a rule.
+type SelftestResultItem struct {
+	PlatformID string `json:"platform_id"`
+	Domain     string `json:"domain"`
+	ResolvedIP string `json:"resolved_ip"`
+	OK         bool   `json:"ok"`
+	LatencyMs  int64  `json:"latency_ms"` // probe RTT ms; -1 = not measured
+	Error      string `json:"error,omitempty"`
+}
+
+// SelftestResult is the agent's answer to one SelftestRequest.
+// NOTE: this is a connectivity check only (DNS resolves + TCP :443/TLS
+// answers). It does NOT prove the streaming service accepts the traffic.
+type SelftestResult struct {
+	RequestID string               `json:"request_id"`
+	RanAt     string               `json:"ran_at"` // RFC3339 UTC
+	Results   []SelftestResultItem `json:"results"`
 }
 
 type NodeHealth struct {

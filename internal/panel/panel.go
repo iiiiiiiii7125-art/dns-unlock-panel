@@ -1143,6 +1143,43 @@ func (s *Server) handleServerByID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "server not found"})
 		return
 	}
+	// POST /api/v1/servers/{id}/selftest — queue one connectivity
+	// self-test for that server. Returns 201 {request_id}; an already
+	// queued (unconsumed, <10min old) request returns 409 with the old
+	// request_id instead of queueing a duplicate; unknown server 404.
+	// A request older than 10 minutes is presumed orphaned (agent dead
+	// or never polled) and may be replaced by a fresh POST.
+	if r.Method == http.MethodPost && strings.HasSuffix(id, "/selftest") {
+		sid := strings.TrimSuffix(id, "/selftest")
+		snap := s.store.Snapshot()
+		found := false
+		for _, sv := range snap.Servers {
+			if sv.ID == sid {
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": "server not found"})
+			return
+		}
+		if old, ok := snap.SelftestPending[sid]; ok {
+			if t, err := time.Parse(time.RFC3339, old.RequestedAt); err == nil && time.Since(t) < 10*time.Minute {
+				writeJSON(w, http.StatusConflict, map[string]any{"error": "已有待处理的自测请求，请等 agent 下次轮询执行完再试", "request_id": old.ID})
+				return
+			}
+		}
+		req := model.SelftestRequest{ID: store.NewID("st"), RequestedAt: time.Now().UTC().Format(time.RFC3339)}
+		_ = s.store.Update(func(d *store.Data) (bool, error) {
+			if d.SelftestPending == nil {
+				d.SelftestPending = map[string]model.SelftestRequest{}
+			}
+			d.SelftestPending[sid] = req
+			return false, nil // queueing a test must not bump config version
+		})
+		writeJSON(w, http.StatusCreated, map[string]any{"request_id": req.ID, "server_id": sid, "requested_at": req.RequestedAt})
+		return
+	}
 	if r.Method != http.MethodDelete {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -1344,6 +1381,11 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		merged[k] = v
 	}
 	cfg := model.AgentConfig{Version: snap.ConfigVersion, Upstream: snap.Upstream}
+	// v0.1.6 self-test: deliver a queued request once, then consume it
+	// so the agent runs it exactly once (it also dedupes by ID).
+	if req, ok := snap.SelftestPending[serverID]; ok {
+		cfg.SelftestRequest = &req
+	}
 	var defaultIP string
 	for _, sv := range snap.Servers {
 		if sv.ID == serverID {
@@ -1412,7 +1454,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 			PreferFastest: rule.PreferFastest, Candidates: regionCandidates(snap.Nodes, rule),
 		})
 	}
-	// Mark server seen.
+	// Mark server seen, and consume a delivered self-test request.
 	if serverID != "" {
 		now := time.Now().UTC().Format(time.RFC3339)
 		_ = s.store.Update(func(d *store.Data) (bool, error) {
@@ -1426,6 +1468,12 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 			}
 			return false, nil
 		})
+		if _, ok := snap.SelftestPending[serverID]; ok {
+			_ = s.store.Update(func(d *store.Data) (bool, error) {
+				delete(d.SelftestPending, serverID)
+				return false, nil
+			})
+		}
 	}
 	writeJSON(w, http.StatusOK, cfg)
 }
@@ -1461,6 +1509,10 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 			if sv.ID == hb.ServerID {
 				d.Servers[i].LastSeen = now
 				d.Servers[i].Status = "online"
+				// v0.1.6 self-test: keep the newest result per server.
+				if hb.SelftestResult != nil {
+					d.Servers[i].LastSelftest = hb.SelftestResult
+				}
 			}
 		}
 		for _, e := range hb.Events {

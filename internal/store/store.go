@@ -29,6 +29,11 @@ type Data struct {
 	// PublicSourceIPs stores the DNS IP the user pasted in for each
 	// public unlock source after registering (source id -> DNS IP).
 	PublicSourceIPs map[string]string `json:"public_source_ips,omitempty"`
+	// SelftestPending holds one queued self-test request per server
+	// (server_id -> request), consumed when the agent next fetches its
+	// config. A request older than 10 minutes may be replaced by a new
+	// POST (the agent is presumed dead); see handleServerByID.
+	SelftestPending map[string]model.SelftestRequest `json:"selftest_pending,omitempty"`
 }
 
 type Store struct {
