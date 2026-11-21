@@ -46,6 +46,14 @@
 #   4. 再测一个非 53 端口（127.0.0.1:5353）同流程，确认端口无关性；
 #   5. （负向，可选）--dns-listen 127.0.0.53:53 的还原应报警告且系统 DNS
 #      仍可用；若安装直接拒绝该冲突地址，记下事实即停，不强行绕过。
+#   6. （R2-15）容器阶段跑一次 rig-inner（RIG_CONTAINER_STAGE=1）：V016-15
+#      的 rig 容器断言（dig @127.0.0.53 UDP 真查回包源）之前零执行——沙箱
+#      里是 SKIP，nspawn 脚本根本不调 rig-inner。步骤 6 在容器内真跑
+#      rig-inner，输出落盘 /root/v016/rig-inner-container.log，宿主侧归档
+#      进 audit/evidence-v016-fix/。跑之前先停真 resolved 与 1~5 步留下的
+#      agent（rig-inner 用 stub 的 systemctl，停不掉真 stub；真 stub 占着
+#      127.0.0.53:53 时 agent 绑不上 :53，S0 会直接失败；关 stub 的真实路
+#      径由上面 5 步覆盖，这里只取 UDP 断言的执行价值）。
 set -euo pipefail
 
 [ "${NSPAWN_VERIFY_APPROVED:-0}" = "1" ] || {
@@ -120,11 +128,26 @@ echo "$CFG_JSON" | grep -q "tiktok" || {
 }
 echo "token 有效：agent 配置含 tiktok 规则"
 
+echo "== 同步台架树进镜像（R2-15：步骤 6 容器内跑 rig-inner 用）=="
+mkdir -p "$IMAGE/root/rig"/{stubs,state,logs,bin,fixtures}
+cp "$WORKTREE/scripts/rig/rig-inner.sh" "$IMAGE/root/rig/rig-inner.sh"
+cp "$WORKTREE/scripts/rig/stubs/"* "$IMAGE/root/rig/stubs/"
+cp "$WORKTREE/scripts/rig/fixtures/"* "$IMAGE/root/rig/fixtures/"
+cp "$WORKTREE/dist/dnsunlock-linux-amd64" "$IMAGE/root/rig/bin/dnsunlock"
+(cd "$WORKTREE" && "$GO" build -trimpath -o "$IMAGE/root/rig/bin/bindprobe" ./scripts/rig/bindprobe)
+(cd "$WORKTREE" && "$GO" build -trimpath -o "$IMAGE/root/rig/bin/bindhold" ./scripts/rig/bindhold)
+chmod +x "$IMAGE/root/rig/stubs/"* "$IMAGE/root/rig/bin/"* "$IMAGE/root/rig/rig-inner.sh"
+cp "$IMAGE/etc/nsswitch.conf" "$IMAGE/root/rig/fixtures/nsswitch.base"  # rig-inner 的 reset_state 要它
+printf '%s\n' "$(cd "$WORKTREE" && git rev-parse HEAD)" > "$IMAGE/root/rig/baseline-commit.txt"  # G-1：基线戳
+echo "台架树已同步进镜像 /root/rig：$(find "$IMAGE/root/rig" -type f | wc -l) 个文件，基线 $(cat "$IMAGE/root/rig/baseline-commit.txt")"
+
 echo "== 写容器内 5 步补验脚本（进镜像 /root/v016/nspawn-guest-check.sh）=="
 cat > "$IMAGE/root/v016/nspawn-guest-check.sh" <<'GUEST_EOF'
 #!/bin/bash
-# 容器内 5 步补验（V016-12）。由宿主脚本写入镜像，machinectl shell 执行。
-# 日志：/root/v016/nspawn-verify.log。token 只从 /root/v016/case.env 读，绝不打印。
+# 容器内补验（V016-12：步骤 1~5；R2-15：步骤 6 跑 rig-inner 容器阶段）。
+# 由宿主脚本写入镜像，machinectl shell 执行。
+# 日志：/root/v016/nspawn-verify.log；步骤 6 另有 /root/v016/rig-inner-container.log。
+# token 只从 /root/v016/case.env 读，绝不打印。
 set -u
 LOG=/root/v016/nspawn-verify.log
 : > "$LOG"
@@ -227,6 +250,54 @@ else
   if getent_example_ok; then echo "[STEP5-OPTIONAL] 系统 DNS 仍可用"; else echo "[STEP5-OPTIONAL] 系统 DNS 不可用，记录在案"; fi
 fi
 
+echo "=== 步骤 6：rig-inner 容器阶段（R2-15，RIG_CONTAINER_STAGE=1）==="
+# R2-15：V016-15 的 rig 容器断言（dig @127.0.0.53 UDP 真查回包源）之前零执行——
+# 沙箱里是 SKIP，nspawn 脚本根本不调 rig-inner。这里在容器内真跑一次 rig-inner，
+# 输出落盘 /root/v016/rig-inner-container.log（另有 pty 逐字稿
+# /root/v016/rig-inner-container-typescript），宿主侧归档进 $EVIDENCE。
+# 前置清理（不属于 rig-inner 本身）：先停真 resolved 与 1~5 步留下的 agent。
+# rig-inner 用 stub 的 systemctl（PATH 前置），它停不掉容器里真的 resolved；
+# 真 stub 占着 127.0.0.53:53 时 agent 绑不上 :53，S0 会直接失败；关 stub 的
+# 真实路径由上面 5 步（真 systemd）覆盖，这里只取 UDP 断言的执行价值。
+# 答案流与 scripts/test-takeover-rig.sh 的答案表同步（24 行），多一个提问就错一位。
+if [ ! -x /root/rig/rig-inner.sh ]; then
+  echo "步骤 6：镜像内 /root/rig/rig-inner.sh 不存在，宿主同步漏了"
+  fail "步骤 6：rig-inner 已同步进镜像"
+else
+  pass "步骤 6：rig-inner 已同步进镜像"
+  systemctl stop dnsunlock-agent 2>/dev/null || true
+  systemctl stop systemd-resolved 2>/dev/null || true
+  sleep 1
+  {
+    printf 'y\ny\ny\n'      # S1b: 关 stub / 接管 / 摘要
+    printf 'y\ny\n'         # S2: 接管 / 摘要
+    printf 'y\ny\n'         # S6: 接管 / 摘要
+    printf 'not-a-url\n'    # S7a: 手动输入（非法）
+    printf '%s\ny\ny\n' "$PANEL_URL"  # S7b: 手动输入 / 接管 / 摘要
+    printf 'y\n\n'          # S8: 接管 / 摘要默认 N
+    printf 'y\n\n'          # S9a: 接管 / hpve 默认 N
+    printf 'y\ny\ny\n'      # S9b: 接管 / hpve / 摘要
+    printf 'y\ny\n'         # S10: 接管 / 摘要
+    printf 'y\ny\n'         # S11: 接管 / 摘要
+    printf 'y\ny\n'         # S13: 接管 / 摘要
+  } > /tmp/nspawn-rig-answers.txt
+  if [ "$(wc -l < /tmp/nspawn-rig-answers.txt)" = 24 ]; then
+    pass "步骤 6：答案流 24 行"
+  else
+    fail "步骤 6：答案流 24 行"
+  fi
+  RIG_INNER_RC=99
+  RIG_CONTAINER_STAGE=1 DNS_AGENT_TOKEN="$DNS_AGENT_TOKEN" RIG_SERVER_ID="$RIG_SERVER_ID" PANEL_URL="$PANEL_URL" \
+    script -qec "/bin/bash /root/rig/rig-inner.sh" /root/v016/rig-inner-container-typescript \
+    < /tmp/nspawn-rig-answers.txt > /root/v016/rig-inner-container.log 2>&1
+  RIG_INNER_RC=$?
+  echo "rig-inner 容器阶段退出码：$RIG_INNER_RC（日志 /root/v016/rig-inner-container.log）"
+  rig_inner_rc0() { [ "${RIG_INNER_RC:-99}" = 0 ]; }
+  assert "步骤 6：rig-inner 容器阶段通过（RIG_CONTAINER_STAGE=1）" rig_inner_rc0
+  assert "步骤 6：容器阶段断言已执行（日志里无 SKIP-容器阶段）" bash -c "! grep -q 'SKIP-容器阶段' /root/v016/rig-inner-container.log"
+  assert "步骤 6：容器阶段 UDP 断言已跑（日志含 dig @127.0.0.53 断言行）" bash -c "grep -q '容器阶段.*dig @127.0.0.53' /root/v016/rig-inner-container.log"
+fi
+
 echo "=== NSPAWN 补验汇总：PASS=$PASS FAIL=$FAIL ==="
 if [ "$FAIL" -gt 0 ]; then
   printf '失败项：\n'
@@ -273,7 +344,12 @@ kill "$NSPAWN_PID" 2>/dev/null || true
 echo "== 归档日志 =="
 cp "$IMAGE/root/v016/nspawn-verify.log" "$EVIDENCE/nspawn-verify-$STAMP.log"
 cp "$IMAGE/root/v016/resolv.conf.baseline" "$EVIDENCE/nspawn-resolv-baseline-$STAMP.txt" 2>/dev/null || true
+# R2-15：步骤 6 的 rig-inner 容器阶段日志是本次补验的证据本体，必须落盘归档。
+cp "$IMAGE/root/v016/rig-inner-container.log" "$EVIDENCE/rig-inner-container-$STAMP.log" 2>/dev/null \
+  || echo "警告：容器内 rig-inner 日志未生成（步骤 6 未跑或未落盘），R2-15 未闭合"
+cp "$IMAGE/root/v016/rig-inner-container-typescript" "$EVIDENCE/rig-inner-container-typescript-$STAMP.log" 2>/dev/null || true
 echo "容器内日志：$EVIDENCE/nspawn-verify-$STAMP.log"
+echo "容器内 rig-inner 日志：$EVIDENCE/rig-inner-container-$STAMP.log"
 echo "宿主日志：$HOST_LOG"
 
 echo "== 轮换/删除测试服务器（token 作废） =="
