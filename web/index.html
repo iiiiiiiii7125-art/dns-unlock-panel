@@ -100,14 +100,16 @@ input[type=checkbox]{width:auto}
 
   <div id="pane-servers" class="card hidden">
     <h2>DNS 服务器 <span class="muted">— 在 VPS 上跑 <code>dnsunlock dns-agent</code> 的机器</span></h2>
-    <div class="warn">🔒 安全必读：DNS 53 绝不能对全网开放递归，否则会被用作 DNS 放大攻击源。公网部署务必二选一：① 把 allowlist 写进 600 配置文件（<code>/etc/dnsunlock/config.json</code> 里的 <code>allowlist</code> 项，如 "你的IP,192.168.1.0/24"，命令行与环境变量都不传）；② 防火墙只放行你自己的客户端 IP 访问 53 端口。sniproxy 同理：只放行被解锁机的 IP 访问 443。</div>
-    <p class="muted">一键安装命令（在目标 VPS 上执行，按提示输入 token 和 DNS 解锁 IP）：</p>
+    <div class="warn">🔒 安全必读：DNS 53 绝不能对全网开放递归，否则会被用作 DNS 放大攻击源。公网部署务必二选一：① 把 allowlist 写进 600 配置文件（<code>/etc/dnsunlock/config.json</code> 里的 <code>allowlist</code> 项，如 "你的IP,192.168.1.0/24"；agent 只认这个文件，启动命令里不要带 allowlist）；② 防火墙只放行你自己的客户端 IP 访问 53 端口。sniproxy 同理：只放行被解锁机的 IP 访问 443。</div>
+    <p class="muted">先登记服务器，下面会直接给出填好的一键安装命令，复制到目标 VPS 执行即可（没登记也可以用下面这条通用命令，装时按提示输入 token）：</p>
     <p><code id="installCmd"></code> <button class="ghost" onclick="copyInstall()">复制</button></p>
     <div class="row">
       <input id="s-name" placeholder="服务器名称，如 美国-DNS-01"><input id="s-ip" placeholder="服务器 IP（可选）">
       <input id="s-defip" placeholder="默认解锁 IP（可选，区域无可用节点时的备用）"><input id="s-allow" placeholder="allowlist（可选，如 203.0.113.7,192.168.1.0/24）"><button onclick="addServer()">登记服务器</button>
     </div>
     <p class="muted" id="srvToken" style="color:#166534"></p>
+    <p><code id="srvInstallCmd"></code> <button class="ghost" id="srvInstallCopyBtn" onclick="copySrvInstall()" style="display:none">复制安装命令</button></p>
+    <p class="muted">安装命令里带有 token，执行后会进目标机器的 shell 历史；token 泄露了就删了这台服务器重新登记，会换新的。</p>
     <table><thead><tr><th>名称</th><th>IP</th><th>默认解锁 IP</th><th>状态</th><th>最后在线</th><th>配置版本</th><th>server_id / agent token（装机用）</th><th></th></tr></thead><tbody id="serversBody"></tbody></table>
     <h3>可选：把自己的 VPS 变成解锁节点（SNI 代理）</h3>
     <p class="muted">面板和 DNS 分流本身不需要这一步。只有当你想让某台自己的 VPS 亲自做解锁出口时，才在那台机器上执行：<br><code id="unlockCmd"></code> <button class="ghost" onclick="copyUnlock()">复制</button></p>
@@ -266,13 +268,33 @@ function renderServers(){
   $('serversBody').innerHTML=SERVERS.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.ip||'')}</td><td>${esc(s.default_unlock_ip||'')}</td>
   <td>${s.status==='online'?'<span class="badge ok">在线</span>':s.status==='offline'?'<span class="badge bad">离线</span>':'<span class="badge dim">未知</span>'}</td>
   <td>${esc(s.last_seen||'—')}</td><td>v${s.config_version||0}</td><td><code>${esc(s.id)}</code><br>${SRV_REVEALED[s.id]?'<code>'+esc(SRV_REVEALED[s.id])+'</code>':'<span class="muted">token 已隐藏</span>'} <button class="ghost" onclick="toggleSrvToken('${s.id}')">${SRV_REVEALED[s.id]?'隐藏':'显示 token'}</button></td>
-  <td><button class="danger" onclick="delServer('${s.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="8" class="muted">还没有 DNS 服务器：先在 VPS 上执行一键安装命令，或先登记再装机</td></tr>';
+  <td><button onclick="copyServerInstall('${s.id}')">复制安装命令</button> <button class="danger" onclick="delServer('${s.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="8" class="muted">还没有 DNS 服务器：先在 VPS 上执行一键安装命令，或先登记再装机</td></tr>';
+}
+// 面板自动生成的安装命令：token、名称、默认解锁 IP、allowlist 都填好了，
+// 目标 VPS 上粘贴执行即可，不再逐项问。单引号转义防命令注入。
+function sq(v){return "'"+String(v).replace(/'/g,"'\\''")+"'"}
+function serverInstallCmd(s,token,defip){
+  let c='curl -fsSL '+location.origin+'/install.sh | DNS_AGENT_TOKEN='+token+' DNS_SERVER_NAME='+sq(s.name);
+  if(defip)c+=' DNS_DEFAULT_IP='+defip;
+  if(s.allowlist)c+=' DNS_ALLOWLIST='+sq(s.allowlist);
+  return c+' bash';
+}
+let LAST_SRV_CMD='';
+function copySrvInstall(){if(LAST_SRV_CMD)navigator.clipboard.writeText(LAST_SRV_CMD)}
+async function copyServerInstall(id){
+  const s=SERVERS.find(x=>x.id===id);if(!s)return;
+  const j=await api('/api/v1/servers/'+id+'/reveal');
+  navigator.clipboard.writeText(serverInstallCmd(s,j.token,j.default_unlock_ip));
+  alert('安装命令已复制，到目标 VPS 粘贴执行即可。');
 }
 async function addServer(){
   const name=$('s-name').value.trim(),ip=$('s-ip').value.trim(),def=$('s-defip').value.trim(),allow=$('s-allow').value.trim();
   if(!name){alert('名称必填');return}
   const j=await api('/api/v1/servers',{method:'POST',body:JSON.stringify({name,ip,default_unlock_ip:def,allowlist:allow})});
   $('srvToken').textContent='已登记，agent token（只显示这一次，装机时要用）：'+(j.token||'');
+  LAST_SRV_CMD=serverInstallCmd(j,j.token,j.default_unlock_ip);
+  $('srvInstallCmd').textContent=LAST_SRV_CMD;
+  $('srvInstallCopyBtn').style.display='';
   $('s-name').value='';$('s-ip').value='';$('s-defip').value='';$('s-allow').value='';await refresh();
 }
 async function delServer(id){if(!confirm('删除这台 DNS 服务器？'))return;await api('/api/v1/servers/'+id,{method:'DELETE'});await refresh()}

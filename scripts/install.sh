@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # dnsunlock 一键安装脚本 — 由面板 /install.sh 下发。
-# 本脚本不含任何密钥：面板地址已 baked，agent token 在安装时人工输入（不回显、不进日志）。
-# 流程（先在面板登记服务器：DNS 服务器 -> 登记服务器，复制 agent token）：
-#   curl -fsSL <面板地址>/install.sh | bash                  # 安装 DNS 分流服务
+# 本脚本不含任何密钥：面板地址已 baked。
+# 流程（先在面板登记服务器：DNS 服务器 -> 登记服务器，面板会直接给出
+# 填好的一键安装命令，复制到目标 VPS 执行）：
+#   curl -fsSL <面板地址>/install.sh | bash                  # 安装 DNS 分流服务（装时按提示输入 token 等）
+#   curl -fsSL <面板地址>/install.sh | DNS_AGENT_TOKEN=<token> DNS_SERVER_NAME='名' DNS_DEFAULT_IP=<ip> DNS_ALLOWLIST='<allow>' bash
+#                                                            # 面板自动生成的命令：值都带好了，不再逐项问
 #   curl -fsSL <面板地址>/install.sh | bash -s -- --unlock-node  # 可选: 把本机变成 SNI 解锁节点
-#   curl -fsSL <面板地址>/install.sh | bash -s -- --panel http://x:8080
 #   bash install.sh --dns-listen 127.0.0.1:5353   # 改 DNS 监听地址（默认 :53）
 # 环境变量：DNS_LISTEN（同 --dns-listen，命令行优先）、DNS_DISABLE_STUB=y
 #   （systemd-resolved 的 stub 占着 :53 时，自动问是否关掉 stub 监听；设
 #   DNS_DISABLE_STUB=y 则不问直接关。只关 stub 监听，不改 /etc/resolv.conf。）
+# 注意：用环境变量带 token 时，token 会进目标机器的 shell 历史；介意的话
+# 就不带变量，装时按提示输入（不回显）。token 只写进 600 配置文件，不进
+# 启动命令 / 日志；泄露了就去面板删了这台服务器重新登记，token 会换新的。
 set -euo pipefail
 
 PANEL_URL="__PANEL_URL__"
@@ -19,8 +24,33 @@ SERVER_NAME=""
 DEFAULT_IP=""
 UNLOCK_IPS=""
 ALLOWLIST=""
+SNI_ALLOW=""
 
-# pick_fastest_ip: 对多个解锁 IP 做 TCP :443 延迟测速, 返回最快的一个。
+# 面板自动生成的安装命令用环境变量带值（值都填好了就不再逐项问）：
+# DNS_AGENT_TOKEN / DNS_SERVER_NAME / DNS_DEFAULT_IP / DNS_ALLOWLIST /
+# DNS_SNI_ALLOWLIST（--unlock-node 模式）。没带变量时照旧交互提问。
+TOKEN="${TOKEN:-${DNS_AGENT_TOKEN:-}}"
+SERVER_NAME="${SERVER_NAME:-${DNS_SERVER_NAME:-}}"
+DEFAULT_IP="${DEFAULT_IP:-${DNS_DEFAULT_IP:-}}"
+ALLOWLIST="${ALLOWLIST:-${DNS_ALLOWLIST:-}}"
+SNI_ALLOW="${SNI_ALLOW:-${DNS_SNI_ALLOWLIST:-}}"
+
+# 交互提问：curl | bash 时 stdin 是脚本本身，提问必须从 /dev/tty 读，
+# 否则 read 会把脚本内容当成答案（token 问答失效、401 就是这么来的）。
+# 用法：ask 变量名 "提示" [silent]；没终端时回落到 stdin（脚本已下载到
+# 文件时 stdin 就是终端；curl | bash 且无终端时读不到，会在下面明确报错）。
+ask() {
+  local _var="$1" _prompt="$2" _silent="${3:-}"
+  if { : < /dev/tty; } 2>/dev/null; then
+    printf '%s' "$_prompt" > /dev/tty
+    if [ "$_silent" = silent ]; then read -rs "$_var" < /dev/tty; echo > /dev/tty
+    else read -r "$_var" < /dev/tty; fi
+  else
+    if [ "$_silent" = silent ]; then read -rsp "$_prompt" "$_var"; echo
+    else read -rp "$_prompt" "$_var"; fi
+  fi
+}
+has_tty() { { : < /dev/tty; } 2>/dev/null; }
 # 计时不用 date +%s%N（Alpine/busybox 上不可靠，见审计 P3-06）：有 python3 就用它计时，
 # 没有就只按通/不通排序，不编造毫秒数。
 pick_fastest_ip() {
@@ -76,8 +106,9 @@ valid_ip_cidr() {
 while [ $# -gt 0 ]; do
   case "$1" in
     --panel) PANEL_URL="$2"; shift 2;;
-    # N-12: 没有 --token 参数。token 只在安装时交互输入（不回显），
-    # 写进 600 配置文件；写进命令行会进 shell 历史和进程列表。
+    # N-12: 没有 --token 参数（写进命令行会进 shell 历史和进程列表）。
+    # token 只在安装时交互输入（不回显），或由面板生成的安装命令经
+    # DNS_AGENT_TOKEN 环境变量带入；两种方式最后都只写进 600 配置文件。
     --server-id) SERVER_ID="$2"; shift 2;;
     --name) SERVER_NAME="$2"; shift 2;;
     --default-ip) DEFAULT_IP="$2"; shift 2;;
@@ -91,6 +122,7 @@ while [ $# -gt 0 ]; do
       echo "  --dns-listen ADDR   DNS 监听地址，默认 :53；如 127.0.0.1:5353（也可设 DNS_LISTEN 环境变量）"
       echo "  --allowlist IPS     允许使用本 DNS 的客户端 IP/CIDR，逗号分隔（必填）"
       echo "  --unlock-node       只装 SNI 解锁节点，不装 DNS 分流服务"
+      echo "  环境变量（面板生成的安装命令自带，没带就交互提问）：DNS_AGENT_TOKEN DNS_SERVER_NAME DNS_DEFAULT_IP DNS_ALLOWLIST DNS_SNI_ALLOWLIST"
       exit 0;;
     *) echo "未知参数: $1"; exit 1;;
   esac
@@ -209,13 +241,18 @@ fi
 
 echo "=== dnsunlock 安装 ==="
 echo "面板: $PANEL_URL"
-[ -z "${PANEL_URL:-}" ] && read -rp "面板地址 (如 http://203.0.113.5:8080): " PANEL_URL
+[ -z "${PANEL_URL:-}" ] && ask PANEL_URL "面板地址 (如 http://203.0.113.5:8080): "
 PANEL_URL="${PANEL_URL%/}"
-# agent token：交互输入不回显；只放 600 配置文件里，绝不出现在启动命令 / 日志里。
+# agent token：没带 DNS_AGENT_TOKEN 环境变量时交互输入，不回显；
+# 只放 600 配置文件里，绝不出现在启动命令 / 日志里。
 if [ -z "${TOKEN:-}" ]; then
-  read -rsp "agent token（面板 -> DNS 服务器 -> 登记后显示的那串，只显示一次）: " TOKEN; echo
+  ask TOKEN "agent token（面板 -> DNS 服务器 -> 登记后显示的那串，只显示一次）: " silent
 fi
-[ -n "${TOKEN:-}" ] || { echo "agent token 不能为空"; exit 1; }
+if [ -z "${TOKEN:-}" ]; then
+  echo "agent token 不能为空。"
+  if ! has_tty; then echo "当前没有可交互的终端（curl | bash 时无法提问）：请用面板生成的安装命令（自带 DNS_AGENT_TOKEN），或先把脚本下载下来再执行：curl -fsSL $PANEL_URL/install.sh -o /tmp/install.sh && bash /tmp/install.sh"; fi
+  exit 1
+fi
 
 # M-02: token 不进命令行：写进 0600 的 curl 配置文件，curl -K 读它。
 # 旧写法（curl -H 后直接跟 token）会把 token 写进进程列表（ps 可见）。
@@ -259,7 +296,9 @@ chmod +x /usr/local/bin/dnsunlock
 if [ "$MODE" = "unlock" ]; then
   # ---- 可选: SNI 解锁节点模式 ----
   echo "[2/6] 配置 SNI 代理模式 (可选助手, 面板/DNS 分流不依赖它)..."
-  read -rp "允许使用本 SNI 代理的客户端 IP/CIDR，逗号分隔（必填，如 203.0.113.7；不填不启动）: " SNI_ALLOW || true
+  if [ -z "${SNI_ALLOW:-}" ]; then
+    ask SNI_ALLOW "允许使用本 SNI 代理的客户端 IP/CIDR，逗号分隔（必填，如 203.0.113.7；不填不启动）: "
+  fi
   [ -n "${SNI_ALLOW:-}" ] || { echo "SNI 代理默认拒绝：不填 allowlist 就不启动，避免变成公开代理。"; exit 1; }
   for _e in $(echo "$SNI_ALLOW" | tr ',' ' '); do valid_ip_cidr "$_e" || { echo "SNI allowlist 里格式不对: $_e"; exit 1; }; done
   # N-12: SNI 也走 600 配置文件（http_listen 为空 = 明文 HTTP 默认禁用，
@@ -290,10 +329,10 @@ fi
 
 # ---- DNS 分流服务模式 ----
 if [ -z "$SERVER_NAME" ]; then
-  read -rp "DNS 服务器名称 (如 香港-DNS-01，可空用面板登记的名字): " SERVER_NAME || true
+  ask SERVER_NAME "DNS 服务器名称 (如 香港-DNS-01，可空用面板登记的名字): "
 fi
 if [ -z "$DEFAULT_IP" ]; then
-  read -rp "默认解锁 IP (可空；只在某条规则的地区无可用节点时作备用，无规则的域名仍走上游): " DEFAULT_IP || true
+  ask DEFAULT_IP "默认解锁 IP (可空；只在某条规则的地区无可用节点时作备用，无规则的域名仍走上游): "
 fi
 if [ -n "$DEFAULT_IP" ] && ! valid_ip_cidr "$DEFAULT_IP"; then echo "默认解锁 IP 格式不对"; exit 1; fi
 if [ -z "$DEFAULT_IP" ] && [ -n "$UNLOCK_IPS" ]; then
@@ -306,7 +345,7 @@ elif [ -n "$UNLOCK_IPS" ]; then
 fi
 # allowlist 必填（P0-04）：空着就等于公开 DNS，直接停下。
 while [ -z "${ALLOWLIST:-}" ]; do
-  read -rp "允许使用本 DNS 的客户端 IP/CIDR，逗号分隔（必填，否则 53 会被滥用做 DNS 放大攻击，如 203.0.113.7,192.168.1.0/24；本机测试填 127.0.0.1）: " ALLOWLIST || true
+  ask ALLOWLIST "允许使用本 DNS 的客户端 IP/CIDR，逗号分隔（必填，否则 53 会被滥用做 DNS 放大攻击，如 203.0.113.7,192.168.1.0/24；本机测试填 127.0.0.1）: "
   [ -n "${ALLOWLIST:-}" ] || echo "allowlist 不能为空。"
 done
 for _e in $(echo "$ALLOWLIST" | tr ',' ' '); do valid_ip_cidr "$_e" || { echo "allowlist 里格式不对: $_e"; exit 1; }; done
@@ -372,7 +411,7 @@ if grep -qi "tailscale" /etc/resolv.conf 2>/dev/null || grep -q "nameserver 100.
   echo "如需本机流量也走分流，请手动把其他机器的 DNS 指到本机，或在 Tailscale 之外再处理。"
 else
 echo
-read -rp "是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] " TAKEOVER || true
+ask TAKEOVER "是否把本机系统 DNS 设为 127.0.0.1 (本机流量也走分流)? [y/N] "
 if [ "${TAKEOVER:-}" = "y" ] || [ "${TAKEOVER:-}" = "Y" ]; then
   # 只备一次原文件：已存在 .orig 就不再覆盖（P1-09：二次接管丢原备份）。
   if [ ! -e /etc/dnsunlock/resolv.conf.orig ]; then
@@ -425,7 +464,7 @@ EOF_NM
   # netplan：有 nameservers 配置时，备份 yaml 并把 addresses 改为 [127.0.0.1]，再 netplan apply（需确认）。
   if ls /etc/netplan/*.yaml >/dev/null 2>&1 && grep -lq "nameservers" /etc/netplan/*.yaml 2>/dev/null; then
     echo "检测到 netplan 配置了 nameservers："
-    read -rp "是否自动改 netplan（备份 yaml，把 nameservers.addresses 改为 [127.0.0.1] 并 netplan apply）? [y/N] " NP || true
+    ask NP "是否自动改 netplan（备份 yaml，把 nameservers.addresses 改为 [127.0.0.1] 并 netplan apply）? [y/N] "
     if [ "${NP:-}" = "y" ] || [ "${NP:-}" = "Y" ]; then
       for f in /etc/netplan/*.yaml; do
         cp -a "$f" "/etc/dnsunlock/$(basename "$f").bak"
