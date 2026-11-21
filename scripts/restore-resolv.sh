@@ -368,5 +368,10 @@ if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   verify_after_restore
   exit 0
 fi
-echo "没有找到原备份 /etc/dnsunlock/resolv.conf.orig，无需还原"
+echo "没有找到永久备份（/var/lib/dnsunlock/backup/ 下无备份，也无 /etc/dnsunlock/resolv.conf.orig）。"
+echo "如果你用的是 --temp 临时模式：临时 DNS 没有永久备份可还，清理办法："
+echo "  - systemd-resolved 的机器：systemctl restart systemd-resolved（resolvectl 设的 DNS 即失效）"
+echo "  - DHCP 的机器：重新拉 DHCP（如 dhclient -r; dhclient，或重启 NetworkManager）"
+echo "  - 或手动把 /etc/resolv.conf 改回原来的 DNS（临时模式直接写文件时若原先是软链，需手动恢复软链）"
+echo "临时模式重启后自动失效，不用专门清理也可以等重启。"
 exit 0

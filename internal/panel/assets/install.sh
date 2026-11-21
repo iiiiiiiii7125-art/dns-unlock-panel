@@ -23,6 +23,7 @@ set -euo pipefail
 PANEL_URL="__PANEL_URL__"
 TOKEN=""
 MODE="dns"
+TEMP_MODE=0
 SERVER_ID=""
 SERVER_NAME=""
 DEFAULT_IP=""
@@ -121,16 +122,18 @@ while [ $# -gt 0 ]; do
     --name) SERVER_NAME="$2"; shift 2;;
     --default-ip) DEFAULT_IP="$2"; shift 2;;
     --unlock-node) MODE="unlock"; shift;;
+    --temp) TEMP_MODE=1; shift;;
     --unlock-ips) UNLOCK_IPS="$2"; shift 2;;
     --allowlist) ALLOWLIST="$2"; shift 2;;
     # P1-REAL-01：监听地址终于有了真实入口（命令行优先于 DNS_LISTEN 环境变量）。
     --dns-listen) DNS_LISTEN="$2"; shift 2;;
     --help|-h)
-      echo "用法: bash install.sh [--panel URL] [--dns-listen ADDR] [--allowlist IPS] [--unlock-node]"
+      echo "用法: bash install.sh [--panel URL] [--dns-listen ADDR] [--allowlist IPS] [--unlock-node] [--temp]"
       echo "  --panel URL         面板地址（默认已 baked；443 不通时自动改走同主机 :8080，也可直接指定内网地址）"
       echo "  --dns-listen ADDR   DNS 监听地址，默认 :53；如 127.0.0.1:5353（也可设 DNS_LISTEN 环境变量）"
       echo "  --allowlist IPS     允许使用本 DNS 的客户端 IP/CIDR，逗号分隔（必填）"
       echo "  --unlock-node       只装 SNI 解锁节点，不装 DNS 分流服务"
+      echo "  --temp              临时模式：只把本次运行的 DNS 指到 agent，不做永久接管（重启后失效，不写永久备份、不加 chattr 锁、不停任何管理器）"
       echo "  环境变量（面板生成的安装命令自带，没带就交互提问）：DNS_AGENT_TOKEN DNS_SERVER_NAME DNS_DEFAULT_IP DNS_ALLOWLIST DNS_SNI_ALLOWLIST"
       exit 0;;
     *) echo "未知参数: $1"; exit 1;;
@@ -407,6 +410,53 @@ get_active_nm_connection_uuid() {
     [ -n "$uuid" ] && { echo "$uuid"; return 0; }
   fi
   nmcli -t -f UUID connection show --active 2>/dev/null | head -1
+}
+
+# v0.1.6 item 5（临时模式）：把 agent 设为系统 DNS，但不做永久接管。
+# systemd-resolved 在跑 → resolvectl dns <主网卡> 127.0.0.1（重启/服务重启后失效）；
+# 否则直接写 resolv.conf，不加 chattr 锁、不停任何管理器、不动
+# netplan/cloud-init/dhclient。全程不写永久备份。
+write_temp_resolv_conf() {
+  local link=""
+  chattr -i /etc/resolv.conf 2>/dev/null || true
+  if [ -L /etc/resolv.conf ]; then
+    link=$(readlink /etc/resolv.conf)
+    echo "提示: 原 /etc/resolv.conf 是软链 -> $link，临时模式先去掉软链写静态文件；还原时手动恢复软链（ln -s $link /etc/resolv.conf）或重启 systemd-resolved。"
+    rm -f /etc/resolv.conf
+  fi
+  if [ "${USE_VC:-0}" = "1" ]; then
+    printf 'nameserver 127.0.0.1\noptions use-vc\n' > /etc/resolv.conf
+  else
+    printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf
+  fi
+  echo "临时模式：已直接写 /etc/resolv.conf（nameserver 127.0.0.1，不加 chattr 锁）。"
+}
+
+apply_temp_dns() {
+  local iface=""
+  # Tailscale 守卫：临时模式也不碰 Tailscale 管理的 resolv.conf。
+  if grep -qi "tailscale" /etc/resolv.conf 2>/dev/null || grep -q "nameserver 100.100.100.100" /etc/resolv.conf 2>/dev/null; then
+    echo "注意: 检测到 /etc/resolv.conf 由 Tailscale 生成，临时模式也不改本机 DNS（会断 Tailscale 内网 DNS）。"
+    echo "如需本机流量也走分流，请手动把其他机器的 DNS 指到本机，或在 Tailscale 之外再处理。"
+    return 0
+  fi
+  probe_agent_transport "$_dl_host" "$_dl_port"
+  if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+    iface=$(get_primary_interface)
+    if [ -n "$iface" ] && resolvectl dns "$iface" 127.0.0.1 2>/dev/null; then
+      echo "临时模式：已用 resolvectl 把 $iface 的 DNS 设为 127.0.0.1（agent）。"
+    else
+      echo "警告: resolvectl 设置失败，改直接写 resolv.conf（临时，不加锁）" >&2
+      write_temp_resolv_conf
+    fi
+  else
+    write_temp_resolv_conf
+  fi
+  echo "临时模式说明：本次只改了运行时 DNS，没有永久备份、没有 chattr 锁、没有停任何管理器。"
+  echo "重启后失效（resolved 重启 / DHCP 续租 / 管理器运行时也可能失效）。"
+  echo "要永久生效：重跑安装并选接管（本机系统 DNS 设为 127.0.0.1）。"
+  echo "要立即还原：systemctl restart systemd-resolved（resolved 机器）或重新拉 DHCP（如 dhclient -r; dhclient，或重启 NetworkManager），或手动把 /etc/resolv.conf 改回原来的 DNS。"
+  verify_system_dns example.com || echo "警告: 临时模式接管后系统解析验证未通过（见上），请检查 agent 是否在跑；还原办法见上。" >&2
 }
 
 # v0.1.3 容错：面板 443 被挡时不要硬等 134 秒。候选顺序：
@@ -747,9 +797,14 @@ else
 fi
 
 # 6. 可选: 把本机系统 DNS 设为 127.0.0.1（默认不做，需确认）。
+# --temp 临时模式：只把本次运行的 DNS 指到 agent，不做永久接管（见 apply_temp_dns）。
+if [ "${TEMP_MODE:-0}" = "1" ]; then
+  echo
+  echo "=== 临时模式（--temp）：只把本次运行的 DNS 指到 agent，不做永久接管 ==="
+  apply_temp_dns
 # P1-REAL-01 补充：resolv.conf 由 Tailscale 生成的机器绝对不接管——
 # Tailscale 的 DNS（100.100.100.100）一旦被覆盖，内网机器就连不上了。
-if grep -qi "tailscale" /etc/resolv.conf 2>/dev/null || grep -q "nameserver 100.100.100.100" /etc/resolv.conf 2>/dev/null; then
+elif grep -qi "tailscale" /etc/resolv.conf 2>/dev/null || grep -q "nameserver 100.100.100.100" /etc/resolv.conf 2>/dev/null; then
   echo
   echo "注意: 检测到 /etc/resolv.conf 由 Tailscale 生成，本机不做 DNS 接管（接管会断 Tailscale 内网 DNS）。"
   echo "如需本机流量也走分流，请手动把其他机器的 DNS 指到本机，或在 Tailscale 之外再处理。"
@@ -1277,7 +1332,12 @@ if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   verify_after_restore
   exit 0
 fi
-echo "没有找到原备份 /etc/dnsunlock/resolv.conf.orig，无需还原"
+echo "没有找到永久备份（/var/lib/dnsunlock/backup/ 下无备份，也无 /etc/dnsunlock/resolv.conf.orig）。"
+echo "如果你用的是 --temp 临时模式：临时 DNS 没有永久备份可还，清理办法："
+echo "  - systemd-resolved 的机器：systemctl restart systemd-resolved（resolvectl 设的 DNS 即失效）"
+echo "  - DHCP 的机器：重新拉 DHCP（如 dhclient -r; dhclient，或重启 NetworkManager）"
+echo "  - 或手动把 /etc/resolv.conf 改回原来的 DNS（临时模式直接写文件时若原先是软链，需手动恢复软链）"
+echo "临时模式重启后自动失效，不用专门清理也可以等重启。"
 exit 0
 RESTORE_EOF
 chmod +x /usr/local/bin/dnsunlock-restore-dns

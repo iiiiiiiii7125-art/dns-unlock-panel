@@ -53,6 +53,8 @@ curl -fsSL http://面板IP:8080/install.sh | bash
 **脚本不自动放行防火墙 53**：agent 的 allowlist 已挡住非授权客户端；如需外网访问，请在防火墙/安全组里只放行 allowlist 里的 IP。
 可选：按提示把本机系统 DNS 设为 127.0.0.1（接管前完整备份 `/etc/resolv.conf`，处理 systemd-resolved / NetworkManager / netplan 冲突，还原命令 `dnsunlock-restore-dns`）。
 
+临时模式（先试用，不永久接管）：`curl -fsSL http://面板IP:8080/install.sh | bash -s -- --temp`。systemd-resolved 在跑时用 `resolvectl dns <主网卡> 127.0.0.1`，否则直接写 resolv.conf；不写永久备份、不加 chattr 锁、不停任何管理器、不动 netplan/cloud-init/dhclient，重启后失效。要永久生效请重跑安装并选接管；要立即还原：`systemctl restart systemd-resolved` 或重新拉 DHCP，或手动改回 resolv.conf（无永久备份时 `dnsunlock-restore-dns` 会提示这些清理办法）。
+
 测试：
 
 ```bash
