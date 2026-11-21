@@ -134,12 +134,54 @@ restore_nm_legacy() {
   done < "$file"
 }
 
-# 按备份里记的后端重载（失败只警告，不致命；item 8 会收成 reload_dns_service 分发）。
-# 只重载备份时在跑的后端：原来没跑的管理器不替用户启动。
+# v0.1.6 item 8：按后端重载（对应 AKDNS reload_dns_service）。
+# 单个后端一个分支：restart resolved / nmcli con reload + 重新激活连接 /
+# netplan apply / resolv.conf 直接生效；失败只警告，不致命。
+reload_dns_service() {
+  local backend="$1" dir="$2"
+  case "$backend" in
+    resolved)
+      if [ "$(meta_value "$dir" resolved_active)" = "yes" ]; then
+        systemctl restart systemd-resolved 2>/dev/null || echo "警告: 重启 systemd-resolved 失败" >&2
+      else
+        echo "跳过 resolved 重载（备份时未在跑）"
+      fi
+      ;;
+    nm)
+      if [ "$(meta_value "$dir" nm_active)" = "yes" ] && command -v nmcli >/dev/null 2>&1; then
+        nmcli general reload 2>/dev/null || echo "警告: nmcli general reload 失败" >&2
+        # 重新激活活动连接（按 UUID；连接名含冒号会被截断，见 item 7）
+        nmcli -t -f UUID connection show --active 2>/dev/null | while IFS= read -r uuid; do
+          [ -n "$uuid" ] || continue
+          nmcli connection up "$uuid" 2>/dev/null || echo "警告: 重新激活 NM 连接 $uuid 失败" >&2
+        done
+      else
+        echo "跳过 NM 重载（备份时未在跑或无 nmcli）"
+      fi
+      ;;
+    netplan)
+      netplan apply 2>/dev/null || echo "警告: netplan apply 失败" >&2
+      ;;
+    resolvconf)
+      if [ "$(meta_value "$dir" resolvconf_active)" = "yes" ]; then
+        resolvconf -u 2>/dev/null || echo "警告: resolvconf -u 失败" >&2
+      else
+        echo "跳过 resolvconf 重载（备份时未在跑）"
+      fi
+      ;;
+    *)
+      # resolv.conf 直接生效，无需重载；未知后端只警告，不致命。
+      echo "警告: 未知后端 $backend，跳过重载" >&2
+      ;;
+  esac
+}
+
+# 按备份里记的后端逐个分发重载。只重载备份时在跑的后端：
+# 原来没跑的管理器不替用户启动。
 # 注意：本函数在 resolv.conf 恢复之前跑，管理器重载时若改写 resolv.conf，
 # 后面恢复 resolv.conf 的步骤会把它盖回去，所以最终内容以备份为准。
 reload_backends() {
-  local dir="$1" backends=""
+  local dir="$1" backends="" b="" _rl_backends=()
   backends=$(meta_value "$dir" backends)
   if [ -z "$backends" ]; then
     # 无 metadata 的老备份：按老脚本的 blanket 做法全量重载（失败只警告）。
@@ -148,35 +190,10 @@ reload_backends() {
     netplan apply 2>/dev/null || true
     return 0
   fi
-  case ",$backends," in
-    *,resolved,*)
-      if [ "$(meta_value "$dir" resolved_active)" = "yes" ]; then
-        systemctl restart systemd-resolved 2>/dev/null || echo "警告: 重启 systemd-resolved 失败" >&2
-      fi
-      ;;
-  esac
-  case ",$backends," in
-    *,nm,*)
-      if [ "$(meta_value "$dir" nm_active)" = "yes" ] && command -v nmcli >/dev/null 2>&1; then
-        nmcli general reload 2>/dev/null || echo "警告: nmcli general reload 失败" >&2
-        # 重新激活活动连接（按 UUID；连接名含冒号会被截断，见 item 7）
-        nmcli -t -f UUID connection show --active 2>/dev/null | while IFS= read -r uuid; do
-          [ -n "$uuid" ] || continue
-          nmcli connection up "$uuid" 2>/dev/null || echo "警告: 重新激活 NM 连接 $uuid 失败" >&2
-        done
-      fi
-      ;;
-  esac
-  case ",$backends," in
-    *,netplan,*) netplan apply 2>/dev/null || echo "警告: netplan apply 失败" >&2;;
-  esac
-  case ",$backends," in
-    *,resolvconf,*)
-      if [ "$(meta_value "$dir" resolvconf_active)" = "yes" ]; then
-        resolvconf -u 2>/dev/null || echo "警告: resolvconf -u 失败" >&2
-      fi
-      ;;
-  esac
+  IFS=',' read -ra _rl_backends <<< "$backends"
+  for b in "${_rl_backends[@]}"; do
+    reload_dns_service "$b" "$dir"
+  done
 }
 
 # 从结构化备份目录还原。顺序：先恢复各后端文件 → 重新启用之前开着的管理器 →
