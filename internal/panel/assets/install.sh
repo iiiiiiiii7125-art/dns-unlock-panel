@@ -614,8 +614,10 @@ clear_temp_state() {
 }
 
 # install_temp_boot_unit：直接写文件路径的临时模式才需要——重启后自动恢复
-# resolv.conf。oneshot unit，开机跑一次 --temp-cleanup（自己删自己）。
+# resolv.conf。oneshot unit，开机跑一次清理（自己删自己）。
 # resolvectl 路径不需要（设置是运行时的，重启即失效）。
+# R2-07：ExecStart 带 --boot——开机清理失败时也返回 0（警告写日志），
+# 不让 oneshot 失败；状态与 unit 都保留，下次启动再试一次。
 # 注意：本函数跑在安装中途，restore 脚本要到安装末尾才写到
 # /usr/local/bin/dnsunlock-restore-dns；unit 只要在重启前存在即可，若安装
 # 中途被杀，unit 可能指向旧版/缺失的 restore 脚本（残留风险：开机清理不跑，
@@ -627,7 +629,7 @@ Description=dnsunlock temp DNS restore (one-shot, removes itself)
 After=network-online.target
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/dnsunlock-restore-dns --temp-cleanup
+ExecStart=/usr/local/bin/dnsunlock-restore-dns --boot --temp-cleanup
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -1317,9 +1319,11 @@ cat > /usr/local/bin/dnsunlock-restore-dns <<'RESTORE_EOF'
 # 还原默认选最早的一份（原始状态），还原前先自动备份当前状态，失败就中止；
 # 还原后验证并报告“已还原并验证通过”或“已还原但验证未通过”。
 # 老版本单份备份 /etc/dnsunlock/resolv.conf.orig 仍认（无备份目录时走老路）。
-# 用法：dnsunlock-restore-dns [--yes] [--backup <备份目录>]
+# 用法：dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup] [--boot]
 #   --yes     非交互：默认还原最早的一份，不再逐项确认（供 uninstall.sh 等脚本调用）
 #   --backup  指定要还原的备份目录（须含 resolv.conf），与 --yes 合用可全程非交互
+#   --temp-cleanup  只清理 --temp 临时模式留下的运行时 DNS；清理失败返回 1（状态已保留）
+#   --boot    与 --temp-cleanup 合用（开机 oneshot unit 用）：清理失败也返回 0
 set -euo pipefail
 [ "$(id -u)" = "0" ] || { echo "请用 root 运行"; exit 1; }
 
@@ -2139,11 +2143,12 @@ clear_temp_state() {
 #     （原先是软链时恢复软链 + 把内容写回目标），再清掉 temp-state 与开机 unit；
 #   none 模式：DNS 没动过，只清记录。
 # 若临时模式启动了 agent（agent_was_active=0），停掉它；之前已在跑的 agent 不动。
-# 尽力而为：哪步失败都警告并继续，最后仍清记录、返回 0（开机 unit 调用时不能失败）。
-# 注意：这里绝不能直接 systemctl restart systemd-resolved——agent 还占着 :53
+# R2-07：revert 失败不再 fail-open——失败时返回 1 并保留状态文件与开机 unit
+# （失败态可再现、可重试；开机 unit 下次启动会再跑一次清理），绝不打印
+# “清理完成”。注意：这里绝不能直接 systemctl restart systemd-resolved——agent 还占着 :53
 # 时 resolved 会抢不到 stub（正是 V016-01 的 P1）；要先停 agent，或用 resolvectl revert。
 cleanup_temp_state() {
-  local _state="/etc/dnsunlock/temp-state/state" _mode="" _iface="" _was_active="0" _link="" _tgt="" _pid=""
+  local _state="/etc/dnsunlock/temp-state/state" _mode="" _iface="" _was_active="0" _link="" _tgt="" _pid="" _revert_failed=0
   echo "临时模式清理：按 /etc/dnsunlock/temp-state 的记录恢复 DNS..."
   if [ ! -f "$_state" ]; then
     echo "临时模式清理：没有临时状态记录（/etc/dnsunlock/temp-state/state 不存在），无需清理。"
@@ -2159,9 +2164,11 @@ cleanup_temp_state() {
           echo "临时模式清理：已 resolvectl revert $_iface（运行时 DNS 已恢复）。"
         else
           echo "警告: resolvectl revert $_iface 失败；可先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved 恢复。" >&2
+          _revert_failed=1
         fi
       else
         echo "警告: 无法 resolvectl revert（无网卡记录或无 resolvectl）；可先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved 恢复。" >&2
+        _revert_failed=1
       fi
       ;;
     direct-write)
@@ -2171,20 +2178,24 @@ cleanup_temp_state() {
           _link=$(cat /etc/dnsunlock/temp-state/resolv.conf.link 2>/dev/null || true)
           rm -f /etc/resolv.conf
           if [ -n "$_link" ]; then
-            ln -s "$_link" /etc/resolv.conf 2>/dev/null || true
+            ln -s "$_link" /etc/resolv.conf 2>/dev/null || { echo "警告: 恢复 /etc/resolv.conf 软链 -> $_link 失败，请手动检查" >&2; _revert_failed=1; }
             case "$_link" in /*) _tgt="$_link" ;; *) _tgt="/etc/$_link" ;; esac
             if [ ! -e "$_tgt" ]; then
               mkdir -p "$(dirname "$_tgt")" 2>/dev/null || true
-              cp -L /etc/dnsunlock/temp-state/resolv.conf.orig "$_tgt" 2>/dev/null || echo "警告: 软链目标 $_tgt 不存在且写回失败，请手动恢复" >&2
+              cp -L /etc/dnsunlock/temp-state/resolv.conf.orig "$_tgt" 2>/dev/null || { echo "警告: 软链目标 $_tgt 不存在且写回失败，请手动恢复" >&2; _revert_failed=1; }
             fi
             echo "临时模式清理：已恢复 /etc/resolv.conf 软链 -> $_link。"
+          else
+            echo "警告: 临时状态里软链目标为空，无法恢复 /etc/resolv.conf 软链；请手动检查。" >&2
+            _revert_failed=1
           fi
         else
-          cp -L /etc/dnsunlock/temp-state/resolv.conf.orig /etc/resolv.conf 2>/dev/null || echo "警告: 恢复 /etc/resolv.conf 失败，请手动检查" >&2
+          cp -L /etc/dnsunlock/temp-state/resolv.conf.orig /etc/resolv.conf 2>/dev/null || { echo "警告: 恢复 /etc/resolv.conf 失败，请手动检查" >&2; _revert_failed=1; }
           echo "临时模式清理：已把 /etc/resolv.conf 从临时状态恢复。"
         fi
       else
         echo "警告: 临时状态里没有原 resolv.conf 备份，无法恢复文件；请手动检查 /etc/resolv.conf。" >&2
+        _revert_failed=1
       fi
       ;;
     none)
@@ -2206,6 +2217,11 @@ cleanup_temp_state() {
   else
     echo "临时模式清理：agent 在临时安装前已在运行，本次不动它。"
   fi
+  # R2-07：revert 失败时不删状态、不删 unit、不报“清理完成”，返回 1。
+  if [ "$_revert_failed" = 1 ]; then
+    echo "临时模式清理未完成：DNS 未恢复原状（见上），状态记录已保留（/etc/dnsunlock/temp-state/state），请手动处理后重跑 dnsunlock-restore-dns --temp-cleanup；开机清理 unit 已保留，下次启动会再试一次。" >&2
+    return 1
+  fi
   # 清掉临时状态与开机 unit（unit 自己删自己，下次开机不再跑）。
   rm -rf /etc/dnsunlock/temp-state 2>/dev/null || true
   if [ -f /etc/systemd/system/dnsunlock-temp-restore.service ]; then
@@ -2219,20 +2235,32 @@ cleanup_temp_state() {
 # ---- 参数 ----
 YES=0
 WANT_DIR=""
+BOOT_CLEANUP=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --yes) YES=1; shift;;
     --backup) WANT_DIR="$2"; shift 2;;
+    --boot)
+      # 只与 --temp-cleanup 合用（开机 oneshot unit 调它时放前面）：
+      # 表示本次调用来自开机 unit，清理失败也返回 0（警告写进日志），
+      # 不让 oneshot 失败；交互路径不用它，失败时返回 1。
+      BOOT_CLEANUP=1; shift;;
     --temp-cleanup)
-      # --temp 临时模式的退出清理（开机 oneshot unit 也调它）：按临时状态记录
-      # 恢复 DNS、停掉临时启动的 agent、清记录与 unit；尽力而为，恒返回 0。
-      cleanup_temp_state
+      # --temp 临时模式的退出清理：按临时状态记录恢复 DNS、停掉临时启动的
+      # agent、清记录与 unit。R2-07：交互路径上 revert 失败时返回 1（状态
+      # 已保留，可重跑）；开机 unit 调用（--boot --temp-cleanup）时恒返回 0。
+      if [ "$BOOT_CLEANUP" = 1 ]; then
+        cleanup_temp_state || true
+        exit 0
+      fi
+      cleanup_temp_state || exit 1
       exit 0;;
     --help|-h)
-      echo "用法: dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup]"
+      echo "用法: dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup] [--boot]"
       echo "  --yes     非交互：默认还原最早的一份（原始状态），不再逐项确认"
       echo "  --backup  指定要还原的备份目录（须含 resolv.conf）"
-      echo "  --temp-cleanup  只清理 --temp 临时模式留下的运行时 DNS（按临时状态记录）"
+      echo "  --temp-cleanup  只清理 --temp 临时模式留下的运行时 DNS（按临时状态记录）；清理失败返回 1（状态已保留，可重跑）"
+      echo "  --boot    与 --temp-cleanup 合用（开机 oneshot unit 用）：清理失败也返回 0，警告写进日志"
       exit 0;;
     *) echo "未知参数: $1"; exit 1;;
   esac
@@ -2322,8 +2350,12 @@ fi
 echo "没有找到永久备份（/var/lib/dnsunlock/backup/ 下无备份，也无 /etc/dnsunlock/resolv.conf.orig）。"
 if [ -f /etc/dnsunlock/temp-state/state ]; then
   echo "但找到 --temp 临时模式的状态记录，按记录清理临时 DNS："
-  cleanup_temp_state
-  exit 0
+  # R2-07：清理失败时返回 1（状态已保留），不谎报成功。
+  if cleanup_temp_state; then
+    exit 0
+  else
+    exit 1
+  fi
 fi
 echo "如果你用的是 --temp 临时模式：临时 DNS 没有永久备份可还，清理办法："
 echo "  - systemd-resolved 的机器：先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved（resolvectl 设的 DNS 即失效；直接 restart 时 agent 还占着 :53，resolved 会抢不到 stub）"
