@@ -171,7 +171,7 @@ input[type=checkbox]{width:auto}
       <button onclick="addNode()">添加 IP</button>
     </div>
     <table><thead><tr><th>名称</th><th>IP</th><th>地区</th><th>状态</th><th>延迟</th><th>备注</th><th></th></tr></thead><tbody id="nodesBody"></tbody></table>
-    <p class="muted">想让某台自己的 VPS 亲自做解锁出口：点每行“复制安装命令”，到那台机器粘贴执行一次就装好 SNI 代理（allowlist 已按已登记的 DNS 服务器公网 IP 填好）；SNI 代理要占 443 端口，被 nginx/Caddy 占了要先让出来。</p>
+    <p class="muted">想让某台自己的 VPS 亲自做解锁出口：点每行“复制安装命令”，到那台机器粘贴执行就装好 SNI 代理（allowlist 已按已登记的 DNS 服务器公网 IP 填好）。执行时还会停下来问 agent token：填任意一台已登记 DNS 服务器的 token（在「DNS 服务器」页点“显示 token”查看）；没有可交互终端（如自动化执行）时会直接退出。还没登记任何 DNS 服务器时别点：命令装到一半会卡在 agent token 那步，先去「DNS 服务器」页登记一台。SNI 代理要占 443 端口，被 nginx/Caddy 占了要先让出来；allowlist 用的是登记的 IP，请确认是 DNS 服务器的公网出口 IP。</p>
   </div>
 
   <div id="pane-public" class="card hidden">
@@ -196,7 +196,7 @@ input[type=checkbox]{width:auto}
     <p class="muted">自测只做连通性检查：对每条已设规则的平台域名，用 agent 自己的解析逻辑查出 IP，再探该 IP 的 :443 连通性。通只说明能连通，不证明流媒体一定接受该流量。</p>
     <table><thead><tr><th>名称</th><th>IP</th><th>默认解锁 IP</th><th>状态</th><th>最后在线</th><th>配置版本</th><th>server_id / agent token（装机用）</th><th></th></tr></thead><tbody id="serversBody"></tbody></table>
     <h3>可选：把自己的 VPS 变成解锁节点（SNI 代理）</h3>
-    <p class="muted">面板和 DNS 分流本身不需要这一步。只有当你想让某台自己的 VPS 亲自做解锁出口时，才在那台机器上执行：<br><code id="unlockCmd"></code> <button class="ghost" onclick="copyUnlock()">复制</button></p>
+    <p class="muted">面板和 DNS 分流本身不需要这一步。只有当你想让某台自己的 VPS 亲自做解锁出口时，才在那台机器上执行：<br><code id="unlockCmd"></code> <button class="ghost" onclick="copyUnlock()">复制</button><br>还没登记 DNS 服务器时先登记一台再装，否则命令会卡在 agent token 那步。执行时会问 agent token，填任意一台已登记 DNS 服务器的 token。</p>
   </div>
 
   <div id="pane-events" class="card hidden">
@@ -643,7 +643,7 @@ function renderNodes(){
   $('nodesBody').innerHTML=NODES.map(n=>`<tr><td>${esc(n.name)}</td><td>${REVEALED[n.id]?esc(REVEALED[n.id]):esc(n.ip)} <button class="ghost" onclick="toggleReveal('${n.id}')">${REVEALED[n.id]?'隐藏':'显示'}</button></td><td>${esc(n.region)}</td>
   <td>${n.status==='online'?'<span class="badge ok">在线</span>':n.status==='offline'?'<span class="badge bad">离线（仅探活失败，不自动改规则）</span>':'<span class="badge dim">未知</span>'}</td>
   <td>${typeof n.latency_ms==='number'&&n.latency_ms>=0?n.latency_ms+' ms':'—'}</td><td>${esc(n.note||'')}</td>
-  <td><button onclick="copyNodeInstall()">复制安装命令</button> <button class="danger" onclick="delNode('${n.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="7" class="muted">还没有解锁 IP：上方添加任意 IP 即可</td></tr>';
+  <td><button onclick="copyNodeInstall('${n.id}')">复制安装命令</button> <button class="danger" onclick="delNode('${n.id}')">删除</button></td></tr>`).join('')||'<tr><td colspan="7" class="muted">还没有解锁 IP：上方添加任意 IP 即可</td></tr>';
 }
 async function addNode(){
   const name=$('n-name').value.trim(),ip=$('n-ip').value.trim(),region=$('n-region').value,note=$('n-note').value.trim();
@@ -676,8 +676,11 @@ function renderServers(){
   }).join('')||'<tr><td colspan="8" class="muted">还没有 DNS 服务器：先在 VPS 上执行一键安装命令，或先登记再装机</td></tr>';
 }
 // v0.1.6 item 4：自测详情行。进行中/失败读本地 SELFTEST；已完成读 s.last_selftest。
+// V016-17：先按 request_id 对账——只要 last_selftest 就是本次请求，就清掉本地
+// error/pending 并展开结果，不让超时 error 永久遮住迟到结果（页内刷新也一样）。
 function selftestDetailRow(s,st){
-  if(st&&st.state==='pending')return `<tr><td colspan="8" class="muted">自测进行中（请求 ${esc(st.request_id||'—')}）…正在等 agent 回传结果，最长约 90 秒；本行会自动更新，不用刷新页面。</td></tr>`;
+  if(st&&st.request_id&&s.last_selftest&&s.last_selftest.request_id===st.request_id)st.state='done';
+  if(st&&st.state==='pending')return `<tr><td colspan="8" class="muted">自测进行中（请求 ${esc(st.request_id||'—')}）…正在等 agent 回传结果，最长约 150 秒；本行会自动更新，不用刷新页面。</td></tr>`;
   if(st&&st.state==='error')return `<tr><td colspan="8" style="color:#991b1b">自测失败：${esc(st.error||'')}</td></tr>`;
   const lt=s.last_selftest;
   if(!lt)return '';
@@ -692,7 +695,9 @@ function selftestDetailRow(s,st){
 }
 function platformName(pid){const p=PLATFORMS.find(x=>x.id===pid);return p?(p.name_zh?p.name+' '+p.name_zh:p.name):pid}
 // v0.1.6 item 4：POST /api/v1/servers/{id}/selftest 入队（返回 {request_id}），
-// 随后每 3 秒只拉 GET /api/v1/servers，按 request_id 等 last_selftest，最多 90 秒。
+// 随后每 3 秒只拉 GET /api/v1/servers，按 request_id 等 last_selftest，最多 150 秒
+// （V016-17：节点全挂时 14 条串行探活 + 心跳相位最坏约 113 秒，90 秒窗口不够）。
+// 超时后不就此定论：watchLateSelftest 继续在后台等迟到结果，结果一到就清掉 error。
 async function runSelftest(id){
   const cur=SELFTEST[id];
   if(cur&&cur.state==='pending')return;
@@ -704,7 +709,7 @@ async function runSelftest(id){
     if(!j||typeof j!=='object'||!j.request_id)throw new Error(j&&j.error?j.error:'后端未返回 request_id（自测接口可能尚未部署）');
     req=j.request_id;SELFTEST[id].request_id=req;
   }catch(e){SELFTEST[id]={request_id:'',state:'error',error:e.message};renderServers();updateSelftestAllStatus();return}
-  for(let i=0;i<30;i++){
+  for(let i=0;i<50;i++){
     await new Promise(r=>setTimeout(r,3000));
     if(!SELFTEST[id]||SELFTEST[id].state!=='pending')return;
     try{
@@ -714,8 +719,24 @@ async function runSelftest(id){
       renderServers();
     }catch(e){/* 轮询单次失败继续等，不打断 */}
   }
-  SELFTEST[id]={request_id:req,state:'error',error:'90 秒内未收到结果（agent 可能未取到请求或测试耗时较长），可稍后查看本行下方结果。'};
+  SELFTEST[id]={request_id:req,state:'error',error:'150 秒内未收到结果（agent 可能未取到请求或测试耗时较长）；仍在后台等，结果到了会自动出现在这里，也可以点“自测”重跑一次。'};
   renderServers();updateSelftestAllStatus();
+  watchLateSelftest(id,req);
+}
+// V016-17：超时后继续在后台等迟到结果（每 15 秒查一次，最长 10 分钟）。
+// 结果一到就把 error 清掉并展开；中途重跑了自测（request_id 变了）就停。
+async function watchLateSelftest(id,req){
+  for(let i=0;i<40;i++){
+    await new Promise(r=>setTimeout(r,15000));
+    const st=SELFTEST[id];
+    if(!st||st.request_id!==req||st.state!=='error')return;
+    try{
+      SERVERS=await api('/api/v1/servers');
+      const s=SERVERS.find(x=>x.id===id);
+      if(s&&s.last_selftest&&s.last_selftest.request_id===req){SELFTEST[id].state='done';renderServers();updateSelftestAllStatus();return}
+      renderServers();
+    }catch(e){/* 轮询单次失败继续等，不打断 */}
+  }
 }
 // v0.1.6 item 4：规则页“自测全部”——对所有在线 server 各发一次自测，结果仍在服务器页各行下方展开。
 async function selftestAll(){
@@ -752,18 +773,34 @@ async function copyServerInstall(id){
 }
 // 节点一键安装命令（用户 2026-11-21 定）：allowlist 取已登记的 DNS 服务器
 // 公网 IP（servers 表的 ip 字段，逗号拼接）。列表接口只给打码 IP，所以
-// 这里逐台调 reveal 取完整 IP；一台都没登记就不带这个变量，安装脚本到
-// 机器上交互问（ask() 本来就会问）。重跑一次命令就能更新 allowlist。
-async function copyNodeInstall(){
-  const ips=[];
+// 这里逐台调 reveal 取完整 IP；重跑一次命令就能更新 allowlist。
+// V016-19：零台服务器时不生成命令——安装脚本先校验 agent token，没有服务
+// 器就没有可用 token，命令到机器上跑不通；改成提示先登记服务器。
+// V016-21：每行按钮传自己的节点 id，复制的命令首行用注释标明是给哪台节点装
+// 的（安装脚本在 --unlock-node 模式下只认 DNS_SNI_ALLOWLIST，不认节点名，
+// 所以行绑定只能落在注释里——注释写清“在这台机器上执行”，不让人误以为
+// 命令本身带了节点身份；节点名里的换行先去掉，防注释断行注入新命令）。
+// reveal 失败不再静默跳过：全失败时不复制、如实报取 IP 失败；部分失败时
+// 复制已有 IP 的命令，但提示里点名哪台没取到（allowlist 可能不全）。
+async function copyNodeInstall(nodeId){
+  const node=NODES.find(x=>x.id===nodeId);
+  if(!SERVERS.length){alert('还没有登记 DNS 服务器：先去「DNS 服务器」页登记一台（拿到 agent token 后再装节点）。节点安装命令装机时要先校验 agent token，没有服务器就没有可用 token，现在复制了也跑不通。');return}
+  const ips=[],failed=[];
   for(const s of SERVERS){
-    try{const j=await api('/api/v1/servers/'+s.id+'/reveal');if(j.ip&&!ips.includes(j.ip))ips.push(j.ip)}catch(e){}
+    try{const j=await api('/api/v1/servers/'+s.id+'/reveal');if(j.ip&&!ips.includes(j.ip))ips.push(j.ip)}
+    catch(e){failed.push(s.name+'（取 IP 失败：'+(e.message||e)+'）')}
   }
-  let c='curl -fsSL '+location.origin+'/install.sh | ';
+  if(!ips.length&&failed.length){alert('取 DNS 服务器 IP 失败，命令未复制：'+failed.join('；')+'。请稍后重试，或重新登录后再试。');return}
+  const tag=node?node.name+'（'+(node.ip||'')+'，'+(node.region||'')+'）':'节点';
+  const head='# 在「'+String(tag).replace(/[\r\n]/g,' ')+'」这台机器上执行：装 SNI 解锁代理；执行时会问 agent token，填任意一台已登记 DNS 服务器的 token。';
+  let c=head+'\n'+'curl -fsSL '+location.origin+'/install.sh | ';
   if(ips.length)c+='DNS_SNI_ALLOWLIST='+sq(ips.join(','))+' ';
   c+='bash -s -- --unlock-node';
   navigator.clipboard.writeText(c);
-  alert(ips.length?'安装命令已复制，到节点机器粘贴执行即可。':'安装命令已复制（未登记 DNS 服务器，allowlist 未填，安装时按提示输入）。');
+  let msg='已复制「'+(node?node.name:'节点')+'」的安装命令，到这台机器粘贴执行。执行时会问 agent token：填任意一台已登记 DNS 服务器的 token（「DNS 服务器」页可查看）。';
+  if(!ips.length)msg+='（allowlist 未填：已登记的服务器没有可用的 IP，安装时按提示输入 DNS 服务器 IP。）';
+  if(failed.length)msg+='注意：以下服务器的 IP 没取到，allowlist 可能不全：'+failed.join('；')+'。';
+  alert(msg);
 }
 async function addServer(){
   const name=$('s-name').value.trim(),ip=$('s-ip').value.trim(),def=$('s-defip').value.trim(),allow=$('s-allow').value.trim();
@@ -806,7 +843,9 @@ async function savePublic(id){
   alert('已保存。规则里选 nameserver 模式并填这个 IP 即可。');
 }
 function copyInstall(){navigator.clipboard.writeText($('installCmd').textContent)}
-function copyUnlock(){navigator.clipboard.writeText($('unlockCmd').textContent)}
+// V016-19：零台服务器时这条 --unlock-node 命令同样跑不通（先卡 agent token），
+// 不复制，提示先登记服务器。
+function copyUnlock(){if(!SERVERS.length){alert('还没有登记 DNS 服务器：先去「DNS 服务器」页登记一台（拿到 agent token 后再装节点）。节点安装命令装机时要先校验 agent token，没有服务器就没有可用 token，现在复制了也跑不通。');return}navigator.clipboard.writeText($('unlockCmd').textContent)}
 if(TOKEN){init().catch(()=>{$('login').classList.remove('hidden');$('app').classList.add('hidden')})}
 setInterval(()=>{pollStatus().catch(()=>{})},15000);
 </script>
