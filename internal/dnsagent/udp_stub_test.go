@@ -1,6 +1,8 @@
 package dnsagent
 
 import (
+	"bytes"
+	"log"
 	"net"
 	"os"
 	"testing"
@@ -99,6 +101,24 @@ func TestPktinfoFamilyFromSocket(t *testing.T) {
 	p6b := newUDPPktinfo(c6b, v6addr)
 	if !p6b.active || !p6b.v6 {
 		t.Fatalf("IPv6 socket: active=%v v6=%v, want active=true v6=true", p6b.active, p6b.v6)
+	}
+}
+
+// TestPktinfoSyscallConnFailureLogs (V016-25): when SyscallConn()
+// fails, newUDPPktinfo must log it like the setsockopt branch does,
+// instead of silently returning an inactive pktinfo. A zero-value
+// UDPConn makes SyscallConn fail deterministically (EINVAL).
+func TestPktinfoSyscallConnFailureLogs(t *testing.T) {
+	var buf bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(old)
+	p := newUDPPktinfo(&net.UDPConn{}, nil)
+	if p.active {
+		t.Fatalf("zero-value conn: pktinfo active=true, want false")
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("SyscallConn")) {
+		t.Fatalf("no SyscallConn log line; log output = %q", buf.String())
 	}
 }
 

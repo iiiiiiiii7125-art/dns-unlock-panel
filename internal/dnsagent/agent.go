@@ -1179,6 +1179,10 @@ func newUDPPktinfo(c *net.UDPConn, addr *net.UDPAddr) *udpPktinfo {
 	p := &udpPktinfo{}
 	raw, err := c.SyscallConn()
 	if err != nil {
+		// V016-25: log this like the setsockopt failure below — the
+		// same "pktinfo not enabled" state must not be silent here
+		// and noisy there, or troubleshooting cannot tell them apart.
+		log.Printf("dns-agent: cannot enable pktinfo: SyscallConn failed (%v); replies to 127.0.0.53 may be dropped on source check", err)
 		return p
 	}
 	var setErr error
