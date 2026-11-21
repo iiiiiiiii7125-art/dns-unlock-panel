@@ -1,0 +1,215 @@
+== green-02 start 2026-11-21T13:56:21Z baseline=3550ebc panel=http://10.0.5.1:18280 ==
+--- reset_container ---
+--- reset done ---
+[PASS] 基线：resolved 在跑
+[PASS] 基线：stub 在 127.0.0.53:53 监听
+[PASS] 基线：无 drop-in
+[PASS] 基线：agent 不在跑
+[PASS] 基线：无临时状态
+[PASS] 基线：系统 DNS 可用
+[PASS] 基线：getent tiktok 不走规则
+=== stage A: stub false-positive (agent 127.0.0.1:53 + stub .53) ===
+install (green --dns-listen 127.0.0.1:53) rc=0 (log /root/v016-verify/green-02a-install.log)
+[PASS] A 安装 rc=0
+[PASS] A 安装后 agent 在跑
+A agent pid before restore: 8185
+[PASS] A stub 已回 127.0.0.53:53
+[PASS] A 预恢复：dig @127.0.0.1 tiktok.com (UDP) 返回规则 IP
+[PASS] A 预恢复：dig @127.0.0.53 example.com (UDP) 有结果
+--- snapshot: green-02A pre-restore (2026-11-21T13:56:45Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=8185
+ss :53 lines:
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=8293,fd=20))
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=8293,fd=18))
+udp   UNCONN 0      0          127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=8185,fd=6))       
+tcp   LISTEN 0      4096       127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=8185,fd=7))       
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=8293,fd=21))
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=8293,fd=19))
+resolv.conf: -rw-r--r-- 1 root root 21 Nov 21 13:56 /etc/resolv.conf
+  nameserver 127.0.0.1
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 172.66.147.243 104.20.23.154 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+restore (--yes) rc=0 (log /root/v016-verify/green-02a-restore.log)
+[PASS] A 还原 rc=0
+[PASS] A 还原未报 ':53 仍被占'
+[PASS] A 还原后 agent 已恢复运行
+A agent pid after restore: 8524
+[PASS] A agent 是新进程（pid 变了）
+[PASS] A 还原后 dig @127.0.0.1 tiktok.com (UDP) 返回规则 IP
+[PASS] A 还原后 dig @127.0.0.53 example.com (UDP) 有结果
+[PASS] A 还原后 resolv.conf 已恢复为 stub 软链
+[PASS] A 还原后系统 DNS 可用
+--- snapshot: green-02A post-restore (2026-11-21T13:56:45Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=8524
+ss :53 lines:
+udp   UNCONN 0      0          127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=8524,fd=6))       
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=8480,fd=20))
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=8480,fd=18))
+tcp   LISTEN 0      4096       127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=8524,fd=3))       
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=8480,fd=21))
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=8480,fd=19))
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 13:56 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients to the
+  # internal DNS stub resolver of systemd-resolved. This file lists all
+  # configured search domains.
+  #
+  # Run "resolvectl status" to see details about the uplink DNS servers
+  # currently in use.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 127.0.0.53
+  options edns0 trust-ad
+  search .
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::ac42:93f3 example.com
+2606:4700:10::6814:179a example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 104.20.23.154 172.66.147.243 
+dig @127.0.0.53 tiktok.com A (UDP): 23.214.22.232 23.214.22.229 23.214.22.237 23.214.22.233 23.214.22.235 23.214.22.236 23.214.22.230 23.214.22.228 
+=== stage B: foreign wildcard :53 holder, agent on 127.0.0.1:5353 ===
+install (green --dns-listen 127.0.0.1:5353) rc=0 (log /root/v016-verify/green-02b-install.log)
+[PASS] B 安装 rc=0
+[PASS] B 安装后 agent 在跑
+[PASS] B 安装后 dig @127.0.0.1 -p 5353 tiktok.com (UDP) 返回规则 IP
+B foreign holder bound wildcard :53 (pid 8793)
+udp   UNCONN 0      0            0.0.0.0:53        0.0.0.0:*    users:(("python3",pid=8793,fd=3))  
+tcp   LISTEN 0      5            0.0.0.0:53        0.0.0.0:*    users:(("python3",pid=8793,fd=4))  
+B agent pid before restore: 8681
+restore (--yes) rc=1 (log /root/v016-verify/green-02b-restore.log)
+[PASS] B 还原 rc=1（中止）
+[PASS] B 还原报 '已有其他服务监听'（停 agent 之前中止）
+[PASS] B 还原报 'agent 未动'
+[PASS] B 中止后 agent 未动（仍在跑）
+[PASS] B 中止后 agent pid 未变
+[PASS] B 中止后 agent 仍答：dig @127.0.0.1 -p 5353 tiktok.com (UDP)
+[PASS] B 中止后 resolv.conf 未动（仍指 agent）
+--- snapshot: green-02B post-abort (holder killed) (2026-11-21T13:57:08Z) ---
+resolved: active=inactive enabled=disabled
+agent: active=active enabled=enabled pid=8681
+ss :53 lines:
+  (none)
+resolv.conf: -rw-r--r-- 1 root root 21 Nov 21 13:56 /etc/resolv.conf
+  nameserver 127.0.0.1
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: FAIL
+getent example.com: FAIL
+dig @127.0.0.1 tiktok.com A (UDP): ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 example.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 tiktok.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+=== stage C: blocker appears AFTER the stop (polling binder) ===
+--- stage C attempt 1 ---
+install (green --dns-listen 127.0.0.1:53) rc=0 (log /root/v016-verify/green-02c-install.log)
+[PASS] C 安装 rc=0
+[PASS] C 安装后 agent 在跑
+C agent pid before restore: 9029
+C polling binder started (no sleep delay, 50ms retries)
+restore (--yes) rc=1 (log /root/v016-verify/green-02c-restore.log)
+C binder DID bind wildcard :53
+[PASS] C binder 抢到了通配符 :53（分段已搭好）
+[PASS] C 还原 rc=1（中止）
+[PASS] C 还原报 'agent 已停，但 :53 仍被占'（停后复查分支）
+[PASS] C 中止时尝试把 agent 起回来
+[PASS] C agent 未能恢复（通配符被占，起不来）
+[PASS] C 待办标记已写
+listen=127.0.0.1:53
+timestamp=2026-11-21T13:57:35+0000
+--- snapshot: green-02C post-abort (marker written) (2026-11-21T13:57:36Z) ---
+resolved: active=inactive enabled=disabled
+agent: active=activating enabled=enabled pid=0
+ss :53 lines:
+udp   UNCONN 0      0            0.0.0.0:53        0.0.0.0:*    users:(("python3",pid=9121,fd=3))
+tcp   LISTEN 0      5            0.0.0.0:53        0.0.0.0:*    users:(("python3",pid=9121,fd=4))
+resolv.conf: -rw-r--r-- 1 root root 21 Nov 21 13:57 /etc/resolv.conf
+  nameserver 127.0.0.1
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: listen=127.0.0.1:53 timestamp=2026-11-21T13:57:35+0000 
+getent tiktok.com: FAIL
+getent example.com: FAIL
+dig @127.0.0.1 tiktok.com A (UDP): ;; communications error to 127.0.0.1#53: timed out ;; communications error to 127.0.0.1#53: timed out ;; communications error to 127.0.0.1#53: timed out ;; no servers could be reached 
+dig @127.0.0.53 example.com A (UDP): ;; communications error to 127.0.0.53#53: timed out ;; communications error to 127.0.0.53#53: timed out ;; communications error to 127.0.0.53#53: timed out ;; no servers could be reached 
+dig @127.0.0.53 tiktok.com A (UDP): ;; communications error to 127.0.0.53#53: timed out ;; communications error to 127.0.0.53#53: timed out ;; communications error to 127.0.0.53#53: timed out ;; no servers could be reached 
+[PASS] C binder 已清，:53 无通配符监听
+=== stage C re-run: pending marker path ===
+[PASS] C 重跑前 agent 仍死（restart 循环已停）
+[PASS] C 重跑前待办标记还在
+restore (--yes) rc=0 (log /root/v016-verify/green-02c-restore2.log)
+[PASS] C 重跑 rc=0
+[PASS] C 重跑认出上次中止（不再谎报未在运行）
+[PASS] C 重跑不报 'agent 还原前未在运行'
+[PASS] C 重跑后 agent 已恢复运行
+[PASS] C 重跑后待办标记已清
+[PASS] C 重跑后 dig @127.0.0.1 tiktok.com (UDP) 返回规则 IP
+[PASS] C 重跑后 dig @127.0.0.53 example.com (UDP) 有结果
+[PASS] C 重跑后系统 DNS 可用
+--- snapshot: green-02C post-rerun (2026-11-21T13:59:06Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=9767
+ss :53 lines:
+udp   UNCONN 0      0          127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=9767,fd=7))       
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=9723,fd=20))
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=9723,fd=18))
+tcp   LISTEN 0      4096       127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=9767,fd=3))       
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=9723,fd=21))
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=9723,fd=19))
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 13:59 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients to the
+  # internal DNS stub resolver of systemd-resolved. This file lists all
+  # configured search domains.
+  #
+  # Run "resolvectl status" to see details about the uplink DNS servers
+  # currently in use.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 127.0.0.53
+  options edns0 trust-ad
+  search .
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 172.66.147.243 104.20.23.154 
+dig @127.0.0.53 tiktok.com A (UDP): 23.214.22.237 23.214.22.230 23.214.22.233 23.214.22.234 23.214.22.236 23.214.22.229 23.214.22.235 23.214.22.228 
+=== green-02 done ===
+=== SUMMARY green-02: PASS=49 FAIL=0 ===

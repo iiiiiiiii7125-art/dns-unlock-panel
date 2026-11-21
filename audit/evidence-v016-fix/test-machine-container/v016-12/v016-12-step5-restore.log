@@ -1,0 +1,17 @@
+可用的备份（时间倒序）：
+  [1] 2026-11-21T14:05:17+0000  pre-takeover  DNS: 1.1.1.1 8.8.8.8 1.1.1.1   /var/lib/dnsunlock/backup/20261121-140517_pre-takeover
+  [2] 2026-11-21T14:05:04+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-140504_pre-restore
+  [3] 2026-11-21T14:04:57+0000  pre-takeover  DNS: 127.0.0.53   /var/lib/dnsunlock/backup/20261121-140457_pre-takeover
+  [4] 2026-11-21T14:04:44+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-140444_pre-restore
+  [5] 2026-11-21T14:04:37+0000  pre-takeover  DNS: 127.0.0.53   /var/lib/dnsunlock/backup/20261121-140437_pre-takeover
+非交互模式：默认还原最早的一份（原始状态）: /var/lib/dnsunlock/backup/20261121-140437_pre-takeover
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261121-140524_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-140524_pre-restore
+从备份还原: /var/lib/dnsunlock/backup/20261121-140437_pre-takeover（pre-takeover，2026-11-21T14:04:37+0000）
+还原前 agent 在运行（监听 127.0.0.53:53），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）...
+跳过 resolvconf 重载（备份时未在跑）
+已还原软链 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf（目标文件仍在，内容以目标为准）
+已还原并验证通过（getent hosts example.com 有结果）
+agent 还原前在运行（监听 127.0.0.53:53），现保持停止：该地址就是 systemd-resolved 的 stub 地址，agent 占了它会直接抢掉 stub。
+如需继续用 agent 分流，请重跑安装脚本并改监听地址（例如 bash install.sh --dns-listen 127.0.0.1:53）；只想恢复系统 DNS 的话，现在已经好了。
+注意: agent 仍是开机自启（enabled），下次启动时还会尝试绑定 :53、与 systemd-resolved 抢端口；如不再用 agent 分流，请执行 systemctl disable dnsunlock-agent，或重跑安装脚本重新接管。

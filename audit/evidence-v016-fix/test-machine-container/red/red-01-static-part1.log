@@ -1,0 +1,68 @@
+== red-01-static-part1 start 2026-11-21T13:42:22Z baseline=374e7b7 panel=http://10.0.5.1:18280 ==
+--- reset_container ---
+--- reset done ---
+[PASS] 基线：resolved 在跑
+[PASS] 基线：stub 在 127.0.0.53:53 监听
+[PASS] 基线：无 drop-in
+[PASS] 基线：agent 不在跑
+[PASS] 基线：无临时状态
+[PASS] 基线：系统 DNS 可用
+[PASS] 基线：getent tiktok 不走规则
+=== variant setup: static /etc/resolv.conf -> 127.0.0.53 ===
+[PASS] 变体基线：静态 resolv.conf 指 127.0.0.53
+[PASS] 变体基线：系统 DNS 可用（stub 在跑）
+--- snapshot: red-01-static baseline (static resolv.conf) (2026-11-21T13:42:24Z) ---
+resolved: active=active enabled=enabled
+agent: active=inactive enabled=n/a pid=0
+ss :53 lines:
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=393,fd=20))
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=393,fd=18))
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=393,fd=19))
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=393,fd=21))
+resolv.conf: -rw-r--r-- 1 root root 22 Nov 21 13:42 /etc/resolv.conf
+  nameserver 127.0.0.53
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 23.214.22.233   tiktok.com
+23.214.22.229   tiktok.com
+23.214.22.236   tiktok.com
+23.214.22.234   tiktok.com
+23.214.22.235   tiktok.com
+23.214.22.237   tiktok.com
+23.214.22.230   tiktok.com
+23.214.22.232   tiktok.com
+getent example.com: 2606:4700:10::ac42:93f3 example.com
+2606:4700:10::6814:179a example.com
+dig @127.0.0.1 tiktok.com A (UDP): ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 example.com A (UDP): 172.66.147.243 104.20.23.154 
+dig @127.0.0.53 tiktok.com A (UDP): 23.214.22.237 23.214.22.236 23.214.22.232 23.214.22.233 23.214.22.234 23.214.22.229 23.214.22.230 23.214.22.235 
+=== install --temp (default :53, stub conflict; answer y) ===
+install (red --temp) rc=0 (log /root/v016-verify/red-01-static-install.log)
+[PASS] 安装 rc=0
+[PASS] RED: 永久 drop-in 被写下
+[PASS] RED: stub 已关
+[PASS] RED: agent 开机自启
+[PASS] RED: agent 在跑
+[PASS] 安装后 getent tiktok 已走 agent（规则 IP）
+[PASS] 安装后 getent example.com 走 agent 上游
+--- snapshot: red-01-static after --temp install (pre-reboot) (2026-11-21T13:42:28Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=539
+ss :53 lines:
+udp   UNCONN 0      0                  *:53              *:*    users:(("dnsunlock",pid=539,fd=7))       
+tcp   LISTEN 0      4096               *:53              *:*    users:(("dnsunlock",pid=539,fd=3))       
+resolv.conf: -rw-r--r-- 1 root root 22 Nov 21 13:42 /etc/resolv.conf
+  nameserver 127.0.0.53
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 104.20.23.154 172.66.147.243 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+HOST-ACTION-NEEDED: reboot the container, then run part2
+=== red-01-static-part1 done ===
+=== SUMMARY red-01-static-part1: PASS=16 FAIL=0 ===

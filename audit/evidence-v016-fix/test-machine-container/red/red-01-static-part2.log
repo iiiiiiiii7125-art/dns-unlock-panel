@@ -1,0 +1,45 @@
+== red-01-static-part2 start 2026-11-21T13:42:30Z baseline=374e7b7 panel=http://10.0.5.1:18280 ==
+--- snapshot: red-01-static after reboot (before assertions) (2026-11-21T13:42:30Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=53
+ss :53 lines:
+udp   UNCONN 0      0                  *:53              *:*    users:(("dnsunlock",pid=53,fd=6))       
+tcp   LISTEN 0      4096               *:53              *:*    users:(("dnsunlock",pid=53,fd=7))       
+resolv.conf: -rw-r--r-- 1 root root 22 Nov 21 13:42 /etc/resolv.conf
+  nameserver 127.0.0.53
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::ac42:93f3 example.com
+2606:4700:10::6814:179a example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 172.66.147.243 104.20.23.154 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+[PASS] RED: 重启后 drop-in 还在
+[PASS] RED: 重启后 agent 仍开机自启
+[PASS] RED: 重启后 agent 自动跑起来了
+[PASS] RED: 重启后 stub 仍关着
+[PASS] RED: 重启后 resolv.conf 仍是静态 127.0.0.53
+[PASS] RED: 重启后分流变永久：getent tiktok.com 仍返回规则 IP
+[PASS] RED: 重启后系统 DNS 经 agent 仍可用
+[PASS] RED: dig @127.0.0.53 tiktok.com (UDP) 返回规则 IP
+--- snapshot: red-01-static after reboot (RED state: split permanently live) (2026-11-21T13:42:30Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=53
+ss :53 lines:
+udp   UNCONN 0      0                  *:53              *:*    users:(("dnsunlock",pid=53,fd=6))       
+tcp   LISTEN 0      4096               *:53              *:*    users:(("dnsunlock",pid=53,fd=7))       
+resolv.conf: -rw-r--r-- 1 root root 22 Nov 21 13:42 /etc/resolv.conf
+  nameserver 127.0.0.53
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::ac42:93f3 example.com
+2606:4700:10::6814:179a example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 172.66.147.243 104.20.23.154 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+=== red-01-static-part2 done ===
+=== SUMMARY red-01-static-part2: PASS=8 FAIL=0 ===

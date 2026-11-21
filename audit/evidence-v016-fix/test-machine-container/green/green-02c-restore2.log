@@ -1,0 +1,17 @@
+可用的备份（时间倒序）：
+  [1] 2026-11-21T13:57:25+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-135725_pre-restore
+  [2] 2026-11-21T13:57:19+0000  pre-takeover  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-135719_pre-takeover
+  [3] 2026-11-21T13:57:06+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-135706_pre-restore
+  [4] 2026-11-21T13:56:58+0000  pre-takeover  DNS: 127.0.0.53   /var/lib/dnsunlock/backup/20261121-135658_pre-takeover
+  [5] 2026-11-21T13:56:45+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-135645_pre-restore
+  [6] 2026-11-21T13:56:36+0000  pre-takeover  DNS: 127.0.0.53   /var/lib/dnsunlock/backup/20261121-135636_pre-takeover
+非交互模式：默认还原最早的一份（原始状态）: /var/lib/dnsunlock/backup/20261121-135636_pre-takeover
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261121-135905_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-135905_pre-restore
+从备份还原: /var/lib/dnsunlock/backup/20261121-135636_pre-takeover（pre-takeover，2026-11-21T13:56:36+0000）
+上次还原中止后 agent 未能恢复（监听 127.0.0.1:53，原本在运行）；本次还原继续，还原后将尝试恢复它...
+跳过 resolvconf 重载（备份时未在跑）
+已还原软链 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf（目标文件仍在，内容以目标为准）
+已还原并验证通过（getent hosts example.com 有结果）
+agent 还原前在运行（监听 127.0.0.1:53），正在恢复...
+agent 已恢复运行（监听 127.0.0.1:53）。

@@ -1,0 +1,99 @@
+== red-01-part2 start 2026-11-21T13:42:17Z baseline=374e7b7 panel=http://10.0.5.1:18280 ==
+--- snapshot: red-01 after reboot (before assertions) (2026-11-21T13:42:17Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=53
+ss :53 lines:
+udp   UNCONN 0      0                  *:53              *:*    users:(("dnsunlock",pid=53,fd=6))       
+tcp   LISTEN 0      4096               *:53              *:*    users:(("dnsunlock",pid=53,fd=3))       
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 13:41 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients directly to
+  # all known uplink DNS servers. This file lists all configured search domains.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 1.1.1.1
+  nameserver 8.8.8.8
+  nameserver 1.1.1.1
+  search .
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 23.216.145.83   tiktok.com
+23.216.145.84   tiktok.com
+23.216.145.90   tiktok.com
+23.216.145.74   tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 172.66.147.243 104.20.23.154 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+[PASS] RED: 重启后 drop-in 还在（持久状态）
+[PASS] RED: 重启后 agent 仍开机自启
+[PASS] RED: 重启后 agent 自动跑起来了
+[PASS] RED: 重启后 stub 仍关着
+[PASS] 实测：重启后 resolv.conf 内容已无 127.0.0.53（stub 文件改列上游）
+[PASS] 实测：重启后 resolv.conf 列出上游 1.1.1.1
+[PASS] 实测：重启后系统 DNS 靠上游仍可用（DNS 死分支未复现）
+[PASS] 实测：重启后 getent tiktok 走上游（系统查询未进分流）
+[PASS] RED: 分流变永久（agent 仍占 :53）：dig @127.0.0.1 tiktok.com (UDP) 仍返回规则 IP
+[PASS] RED: dig @127.0.0.53 tiktok.com (UDP) 也返回规则 IP（通配符 agent 截获 .53 查询）
+结论：持久状态已证实（drop-in + enabled agent 跨重启保留，违背“重启后失效”）；
+审计的“系统 DNS 死”分支在本容器（Debian 12 + 软链 resolv.conf）未复现——stub 关掉后
+stub 文件改列上游，系统 DNS 靠上游活着；分流以 agent 常驻 :53 的形式变永久。
+静态 resolv.conf（nameserver 127.0.0.53）变体见 g-red-01-static.sh（分流永久分支）。
+--- snapshot: red-01 after reboot (RED state: persistent, DNS alive via upstream) (2026-11-21T13:42:17Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=53
+ss :53 lines:
+udp   UNCONN 0      0                  *:53              *:*    users:(("dnsunlock",pid=53,fd=6))       
+tcp   LISTEN 0      4096               *:53              *:*    users:(("dnsunlock",pid=53,fd=3))       
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 13:41 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients directly to
+  # all known uplink DNS servers. This file lists all configured search domains.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 1.1.1.1
+  nameserver 8.8.8.8
+  nameserver 1.1.1.1
+  search .
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 23.214.22.229   tiktok.com
+23.214.22.235   tiktok.com
+23.214.22.228   tiktok.com
+23.214.22.233   tiktok.com
+23.214.22.236   tiktok.com
+23.214.22.230   tiktok.com
+23.214.22.237   tiktok.com
+23.214.22.232   tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 172.66.147.243 104.20.23.154 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+=== red-01-part2 done ===
+=== SUMMARY red-01-part2: PASS=10 FAIL=0 ===

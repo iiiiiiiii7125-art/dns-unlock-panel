@@ -1,0 +1,85 @@
+== green-01b-part1 start 2026-11-21T14:00:00Z baseline=3550ebc panel=http://10.0.5.1:18280 ==
+--- reset_container ---
+--- reset done ---
+[PASS] 基线：resolved 在跑
+[PASS] 基线：stub 在 127.0.0.53:53 监听
+[PASS] 基线：无 drop-in
+[PASS] 基线：agent 不在跑
+[PASS] 基线：无临时状态
+[PASS] 基线：系统 DNS 可用
+[PASS] 基线：getent tiktok 不走规则
+=== stop resolved (keep it enabled, so it comes back at boot) ===
+[PASS] resolved 已停
+[PASS] resolved 仍是 enabled
+--- snapshot: green-01b staged (resolved stopped, enabled) (2026-11-21T14:00:04Z) ---
+resolved: active=inactive enabled=enabled
+agent: active=inactive enabled=n/a pid=0
+ss :53 lines:
+  (none)
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 14:00 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients to the
+  # internal DNS stub resolver of systemd-resolved. This file lists all
+  # configured search domains.
+  #
+  # Run "resolvectl status" to see details about the uplink DNS servers
+  # currently in use.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 127.0.0.53
+  options edns0 trust-ad
+  search .
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: FAIL
+getent example.com: FAIL
+dig @127.0.0.1 tiktok.com A (UDP): ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 example.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 tiktok.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+=== install --temp :53 (direct-write path) ===
+install (green --temp) rc=0 (log /root/v016-verify/green-01b-install.log)
+[PASS] 安装 rc=0
+[PASS] 安装走直接写文件路径
+[PASS] 安装已装开机清理 unit
+[PASS] resolv.conf 是静态文件（非软链）
+[PASS] 临时状态已记录（direct-write）
+[PASS] 临时状态存了原 resolv.conf
+[PASS] 临时状态存了原软链目标
+[PASS] 开机清理 unit 已启用
+[PASS] agent 在跑
+[PASS] agent 未开机自启
+[PASS] 安装后 getent tiktok 返回规则 IP
+[PASS] 安装后 getent example.com 走上游
+--- snapshot: green-01b after --temp install (pre-reboot) (2026-11-21T14:00:22Z) ---
+resolved: active=inactive enabled=enabled
+agent: active=active enabled=disabled
+n/a pid=400
+ss :53 lines:
+udp   UNCONN 0      0                  *:53              *:*    users:(("dnsunlock",pid=400,fd=7))
+tcp   LISTEN 0      4096               *:53              *:*    users:(("dnsunlock",pid=400,fd=3))
+resolv.conf: -rw-r--r-- 1 root root 21 Nov 21 14:00 /etc/resolv.conf
+  nameserver 127.0.0.1
+drop-in: absent
+temp-state: resolv.conf.link resolv.conf.orig state ; boot-unit: enabled
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::ac42:93f3 example.com
+2606:4700:10::6814:179a example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 104.20.23.154 172.66.147.243 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+HOST-ACTION-NEEDED: reboot the container, then run part2
+=== green-01b-part1 done ===
+=== SUMMARY green-01b-part1: PASS=21 FAIL=0 ===

@@ -1,0 +1,115 @@
+== red-01-part1 start 2026-11-21T13:41:12Z baseline=374e7b7 panel=http://10.0.5.1:18280 ==
+--- reset_container ---
+--- reset done ---
+[PASS] 基线：resolved 在跑
+[PASS] 基线：stub 在 127.0.0.53:53 监听
+[PASS] 基线：无 drop-in
+[PASS] 基线：agent 不在跑
+[PASS] 基线：无临时状态
+[PASS] 基线：系统 DNS 可用
+[PASS] 基线：getent tiktok 不走规则
+--- snapshot: red-01 baseline (2026-11-21T13:41:15Z) ---
+resolved: active=active enabled=enabled
+agent: active=inactive enabled=n/a pid=0
+ss :53 lines:
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=1821,fd=20))
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=1821,fd=18))
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=1821,fd=19))
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=1821,fd=21))
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 13:41 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients to the
+  # internal DNS stub resolver of systemd-resolved. This file lists all
+  # configured search domains.
+  #
+  # Run "resolvectl status" to see details about the uplink DNS servers
+  # currently in use.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 127.0.0.53
+  options edns0 trust-ad
+  search .
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 23.214.22.236   tiktok.com
+23.214.22.234   tiktok.com
+23.214.22.237   tiktok.com
+23.214.22.228   tiktok.com
+23.214.22.232   tiktok.com
+23.214.22.235   tiktok.com
+23.214.22.229   tiktok.com
+23.214.22.233   tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 example.com A (UDP): 172.66.147.243 104.20.23.154 
+dig @127.0.0.53 tiktok.com A (UDP): 23.214.22.234 23.214.22.235 23.214.22.229 23.214.22.228 23.214.22.236 23.214.22.233 23.214.22.237 23.214.22.232 
+=== install --temp (default :53, stub conflict; answer y to stub question) ===
+install (red --temp) rc=0 (log /root/v016-verify/red-01-install.log)
+[PASS] 安装 rc=0
+[PASS] RED: 永久 drop-in 被写下（DNSStubListener=no）
+[PASS] RED: stub 已关（127.0.0.53:53 无监听）
+[PASS] RED: agent 开机自启（enabled）
+[PASS] RED: agent 在跑
+[PASS] RED: 无临时状态记录（旧代码没有）
+[PASS] 安装后 getent example.com 走上游
+[PASS] 安装后 dig @127.0.0.1 tiktok.com (UDP) 返回规则 IP
+observation: getent tiktok.com goes to upstream first in red (stub disabled -> stub-resolv.conf lists 1.1.1.1 before 127.0.0.1), so the temp split does NOT apply to system queries here; direct dig @127.0.0.1 proves the agent itself answers the rule IP. Not a V016-01 verdict item, recorded as observed.
+--- snapshot: red-01 after --temp install (pre-reboot) (2026-11-21T13:41:18Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=1962
+ss :53 lines:
+udp   UNCONN 0      0                  *:53              *:*    users:(("dnsunlock",pid=1962,fd=7))       
+tcp   LISTEN 0      4096               *:53              *:*    users:(("dnsunlock",pid=1962,fd=3))       
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 13:41 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients directly to
+  # all known uplink DNS servers. This file lists all configured search domains.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 1.1.1.1
+  nameserver 8.8.8.8
+  nameserver 127.0.0.1
+  search .
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 23.214.22.232   tiktok.com
+23.214.22.237   tiktok.com
+23.214.22.230   tiktok.com
+23.214.22.228   tiktok.com
+23.214.22.233   tiktok.com
+23.214.22.229   tiktok.com
+23.214.22.236   tiktok.com
+23.214.22.234   tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 172.66.147.243 104.20.23.154 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+HOST-ACTION-NEEDED: reboot the container, then run part2
+=== red-01-part1 done ===
+=== SUMMARY red-01-part1: PASS=15 FAIL=0 ===

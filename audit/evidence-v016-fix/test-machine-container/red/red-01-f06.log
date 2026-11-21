@@ -1,0 +1,184 @@
+== red-01-f06 start 2026-11-21T13:43:56Z baseline=374e7b7 panel=http://10.0.5.1:18280 ==
+--- reset_container ---
+--- reset done ---
+[PASS] 基线：resolved 在跑
+[PASS] 基线：stub 在 127.0.0.53:53 监听
+[PASS] 基线：无 drop-in
+[PASS] 基线：agent 不在跑
+[PASS] 基线：无临时状态
+[PASS] 基线：系统 DNS 可用
+[PASS] 基线：getent tiktok 不走规则
+=== stage: stub disabled by an earlier drop-in, resolved active ===
+[PASS] stub 已关（drop-in 生效）
+[PASS] resolved 在跑
+--- snapshot: red-01-f06 staged (stub off, resolved active) (2026-11-21T13:44:01Z) ---
+resolved: active=active enabled=enabled
+agent: active=inactive enabled=n/a pid=0
+ss :53 lines:
+  (none)
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 13:43 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients directly to
+  # all known uplink DNS servers. This file lists all configured search domains.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 1.1.1.1
+  nameserver 8.8.8.8
+  nameserver 127.0.0.1
+  search .
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 23.214.22.235   tiktok.com
+23.214.22.237   tiktok.com
+23.214.22.228   tiktok.com
+23.214.22.232   tiktok.com
+23.214.22.234   tiktok.com
+23.214.22.230   tiktok.com
+23.214.22.233   tiktok.com
+23.214.22.229   tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 example.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 tiktok.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+=== install --temp :53 (red): no stub question, agent takes wildcard :53 ===
+install (red --temp) rc=0 (log /root/v016-verify/red-01-f06-install.log)
+[PASS] 安装 rc=0
+[PASS] 安装后 agent 占通配符 :53
+[PASS] 安装走 resolvectl 路径
+observation: getent tiktok.com goes to upstream first here too (stub off -> stub file lists 1.1.1.1 before 127.0.0.1); direct dig @127.0.0.1 below proves the agent answers the rule IP.
+--- snapshot: red-01-f06 after --temp install (2026-11-21T13:44:04Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=1137
+ss :53 lines:
+udp   UNCONN 0      0                  *:53              *:*    users:(("dnsunlock",pid=1137,fd=8))       
+tcp   LISTEN 0      4096               *:53              *:*    users:(("dnsunlock",pid=1137,fd=6))       
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 13:43 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients directly to
+  # all known uplink DNS servers. This file lists all configured search domains.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 1.1.1.1
+  nameserver 8.8.8.8
+  nameserver 127.0.0.1
+  search .
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 23.214.22.234   tiktok.com
+23.214.22.233   tiktok.com
+23.214.22.230   tiktok.com
+23.214.22.232   tiktok.com
+23.214.22.235   tiktok.com
+23.214.22.228   tiktok.com
+23.214.22.236   tiktok.com
+23.214.22.229   tiktok.com
+getent example.com: 2606:4700:10::ac42:93f3 example.com
+2606:4700:10::6814:179a example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 104.20.23.154 172.66.147.243 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+=== drop-in removed (stub re-enabled by OS update), then documented exit ===
+--- running the documented exit: systemctl restart systemd-resolved ---
+Nov 21 13:43:56 v016-test systemd-resolved[1000]: Using system hostname 'v016-test'.
+Nov 21 13:43:56 v016-test systemd[1]: Started systemd-resolved.service - Network Name Resolution.
+Nov 21 13:43:58 v016-test systemd-resolved[1000]: Using degraded feature set UDP instead of UDP+EDNS0 for DNS server 127.0.0.1.
+Nov 21 13:43:59 v016-test systemd[1]: Stopping systemd-resolved.service - Network Name Resolution...
+Nov 21 13:43:59 v016-test systemd[1]: systemd-resolved.service: Deactivated successfully.
+Nov 21 13:43:59 v016-test systemd[1]: Stopped systemd-resolved.service - Network Name Resolution.
+Nov 21 13:43:59 v016-test systemd[1]: Starting systemd-resolved.service - Network Name Resolution...
+Nov 21 13:43:59 v016-test systemd-resolved[1015]: Positive Trust Anchors:
+Nov 21 13:43:59 v016-test systemd-resolved[1015]: . IN DS 20326 8 2 e06d44b80b8f1d39a95c0b0d7c65d08458e880409bbc683457104237c7f8ec8d
+Nov 21 13:43:59 v016-test systemd-resolved[1015]: . IN DS 38696 8 2 683d2d0acb8c9b712a1948b27f741219298d0a450d612c483af444a4c0fb2b16
+Nov 21 13:43:59 v016-test systemd-resolved[1015]: Negative trust anchors: home.arpa 10.in-addr.arpa 16.172.in-addr.arpa 17.172.in-addr.arpa 18.172.in-addr.arpa 19.172.in-addr.arpa 20.172.in-addr.arpa 21.172.in-addr.arpa 22.172.in-addr.arpa 23.172.in-addr.arpa 24.172.in-addr.arpa 25.172.in-addr.arpa 26.172.in-addr.arpa 27.172.in-addr.arpa 28.172.in-addr.arpa 29.172.in-addr.arpa 30.172.in-addr.arpa 31.172.in-addr.arpa 170.0.0.192.in-addr.arpa 171.0.0.192.in-addr.arpa 168.192.in-addr.arpa d.f.ip6.arpa ipv4only.arpa corp home internal intranet lan local private test
+Nov 21 13:43:59 v016-test systemd-resolved[1015]: Using system hostname 'v016-test'.
+Nov 21 13:43:59 v016-test systemd[1]: Started systemd-resolved.service - Network Name Resolution.
+Nov 21 13:44:04 v016-test systemd[1]: Stopping systemd-resolved.service - Network Name Resolution...
+Nov 21 13:44:04 v016-test systemd[1]: systemd-resolved.service: Deactivated successfully.
+Nov 21 13:44:04 v016-test systemd[1]: Stopped systemd-resolved.service - Network Name Resolution.
+Nov 21 13:44:04 v016-test systemd[1]: Starting systemd-resolved.service - Network Name Resolution...
+Nov 21 13:44:04 v016-test systemd-resolved[1224]: Positive Trust Anchors:
+Nov 21 13:44:04 v016-test systemd-resolved[1224]: . IN DS 20326 8 2 e06d44b80b8f1d39a95c0b0d7c65d08458e880409bbc683457104237c7f8ec8d
+Nov 21 13:44:04 v016-test systemd-resolved[1224]: . IN DS 38696 8 2 683d2d0acb8c9b712a1948b27f741219298d0a450d612c483af444a4c0fb2b16
+Nov 21 13:44:04 v016-test systemd-resolved[1224]: Negative trust anchors: home.arpa 10.in-addr.arpa 16.172.in-addr.arpa 17.172.in-addr.arpa 18.172.in-addr.arpa 19.172.in-addr.arpa 20.172.in-addr.arpa 21.172.in-addr.arpa 22.172.in-addr.arpa 23.172.in-addr.arpa 24.172.in-addr.arpa 25.172.in-addr.arpa 26.172.in-addr.arpa 27.172.in-addr.arpa 28.172.in-addr.arpa 29.172.in-addr.arpa 30.172.in-addr.arpa 31.172.in-addr.arpa 170.0.0.192.in-addr.arpa 171.0.0.192.in-addr.arpa 168.192.in-addr.arpa d.f.ip6.arpa ipv4only.arpa corp home internal intranet lan local private test
+Nov 21 13:44:05 v016-test systemd-resolved[1224]: Using system hostname 'v016-test'.
+Nov 21 13:44:05 v016-test systemd-resolved[1224]: Another process is already listening on UDP socket 127.0.0.53:53.
+Nov 21 13:44:05 v016-test systemd-resolved[1224]: Turning off local DNS stub support.
+Nov 21 13:44:05 v016-test systemd[1]: Started systemd-resolved.service - Network Name Resolution.
+[PASS] RED: 重启后 stub 仍未监听（agent 占着 :53，抢不到）
+[PASS] RED: journal 含 stub 绑定失败（Another process is already listening）
+[PASS] RED: journal 含 stub 被关掉（Turning off local DNS stub support）
+[PASS] 实测：重启后 resolv.conf 回到 nameserver 127.0.0.53
+[PASS] 实测：重启后系统 DNS 经 agent 活着（非死）：getent tiktok 返回规则 IP
+[PASS] 实测：重启后 getent example.com 有结果
+[PASS] 实测：dig @127.0.0.53 example.com (UDP) 有应答（来自 agent，非 stub）
+[PASS] RED: agent 还活着：dig @127.0.0.1 tiktok.com (UDP) 仍返回规则 IP
+结论：文档化退出确实复现了 P1 绑定冲突（journal: Another process is already
+listening on UDP socket 127.0.0.53:53，stub 被关掉）；但“系统 DNS 死”未按字面
+复现——通配符 agent 截获 .53 查询，系统 DNS 经 agent 活着，分流静默变永久且
+stub 再也回不来（除非先停 agent）。
+--- snapshot: red-01-f06 after documented exit (RED state) (2026-11-21T13:44:07Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=1137
+ss :53 lines:
+udp   UNCONN 0      0                  *:53              *:*    users:(("dnsunlock",pid=1137,fd=8))       
+tcp   LISTEN 0      4096               *:53              *:*    users:(("dnsunlock",pid=1137,fd=6))       
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 13:43 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients to the
+  # internal DNS stub resolver of systemd-resolved. This file lists all
+  # configured search domains.
+  #
+  # Run "resolvectl status" to see details about the uplink DNS servers
+  # currently in use.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 127.0.0.53
+  options edns0 trust-ad
+  search .
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::ac42:93f3 example.com
+2606:4700:10::6814:179a example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 104.20.23.154 172.66.147.243 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+=== red-01-f06 done ===
+=== SUMMARY red-01-f06: PASS=20 FAIL=0 ===

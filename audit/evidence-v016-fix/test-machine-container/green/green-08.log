@@ -1,0 +1,127 @@
+== green-08 start 2026-11-21T14:02:07Z baseline=3550ebc panel=http://10.0.5.1:18280 ==
+--- reset_container ---
+--- reset done ---
+[PASS] 基线：resolved 在跑
+[PASS] 基线：stub 在 127.0.0.53:53 监听
+[PASS] 基线：无 drop-in
+[PASS] 基线：agent 不在跑
+[PASS] 基线：无临时状态
+[PASS] 基线：系统 DNS 可用
+[PASS] 基线：getent tiktok 不走规则
+=== disable resolved BEFORE the takeover backup is taken ===
+Removed "/etc/systemd/system/sysinit.target.wants/systemd-resolved.service".
+Removed "/etc/systemd/system/dbus-org.freedesktop.resolve1.service".
+[PASS] resolved 已停
+[PASS] resolved 已 disable
+--- snapshot: green-08 staged (resolved disabled) (2026-11-21T14:02:11Z) ---
+resolved: active=inactive enabled=disabled
+agent: active=inactive enabled=n/a pid=0
+ss :53 lines:
+  (none)
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 14:02 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients to the
+  # internal DNS stub resolver of systemd-resolved. This file lists all
+  # configured search domains.
+  #
+  # Run "resolvectl status" to see details about the uplink DNS servers
+  # currently in use.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 127.0.0.53
+  options edns0 trust-ad
+  search .
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: FAIL
+getent example.com: FAIL
+dig @127.0.0.1 tiktok.com A (UDP): ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 example.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 tiktok.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+=== install permanent :53 (resolved down) ===
+install (green ) rc=0 (log /root/v016-verify/green-08-install.log)
+[PASS] 安装 rc=0
+[PASS] 安装后 agent 在跑（通配符 :53）
+[PASS] 备份 metadata 记 resolved_enabled=no
+[PASS] 安装后 getent tiktok 返回规则 IP
+--- snapshot: green-08 pre-restore (agent :53, resolved down) (2026-11-21T14:02:28Z) ---
+resolved: active=inactive enabled=disabled
+agent: active=active enabled=enabled pid=1653
+ss :53 lines:
+udp   UNCONN 0      0                  *:53              *:*    users:(("dnsunlock",pid=1653,fd=7))
+tcp   LISTEN 0      4096               *:53              *:*    users:(("dnsunlock",pid=1653,fd=3))
+resolv.conf: -rw-r--r-- 1 root root 21 Nov 21 14:02 /etc/resolv.conf
+  nameserver 127.0.0.1
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::ac42:93f3 example.com
+2606:4700:10::6814:179a example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 172.66.147.243 104.20.23.154 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+=== restore --yes ===
+restore (--yes) rc=1 (log /root/v016-verify/green-08-restore.log)
+[PASS] 还原实测 :53 空闲（不是瞎猜已占用）
+[PASS] 还原不报旧谎言 'systemd-resolved 已重新占用'
+[PASS] 还原后 agent 已恢复运行
+[PASS] 还原后 agent 仍占 :53
+[PASS] 还原后 dig @127.0.0.1 tiktok.com (UDP) 返回规则 IP
+[PASS] 还原后 stub 确实没起来（ss 无 127.0.0.53:53）
+[PASS] 还原后 dig @127.0.0.53 tiktok.com (UDP) 返回规则 IP（通配符 agent 代答）
+restore rc=1 (expect 1: verify fails because resolved stays down and resolv.conf points at the dead stub — V016-10 fail-closed, not a V016-08 failure)
+[PASS] 还原 rc=1（验证未通过，fail-closed）
+--- snapshot: green-08 post-restore (2026-11-21T14:02:29Z) ---
+resolved: active=inactive enabled=disabled
+agent: active=active enabled=enabled pid=1905
+ss :53 lines:
+udp   UNCONN 0      0                  *:53              *:*    users:(("dnsunlock",pid=1905,fd=7))
+tcp   LISTEN 0      4096               *:53              *:*    users:(("dnsunlock",pid=1905,fd=3))
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 14:02 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients to the
+  # internal DNS stub resolver of systemd-resolved. This file lists all
+  # configured search domains.
+  #
+  # Run "resolvectl status" to see details about the uplink DNS servers
+  # currently in use.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 127.0.0.53
+  options edns0 trust-ad
+  search .
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::ac42:93f3 example.com
+2606:4700:10::6814:179a example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 104.20.23.154 172.66.147.243 
+dig @127.0.0.53 tiktok.com A (UDP): 203.0.113.99 
+=== green-08 done ===
+=== SUMMARY green-08: PASS=21 FAIL=0 ===

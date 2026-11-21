@@ -1,0 +1,99 @@
+== green-09 start 2026-11-21T14:01:12Z baseline=3550ebc panel=http://10.0.5.1:18280 ==
+--- reset_container ---
+--- reset done ---
+[PASS] 基线：resolved 在跑
+[PASS] 基线：stub 在 127.0.0.53:53 监听
+[PASS] 基线：无 drop-in
+[PASS] 基线：agent 不在跑
+[PASS] 基线：无临时状态
+[PASS] 基线：系统 DNS 可用
+[PASS] 基线：getent tiktok 不走规则
+=== install permanent 127.0.0.1:53 (green) ===
+install (green --dns-listen 127.0.0.1:53) rc=0 (log /root/v016-verify/green-09-install.log)
+[PASS] 安装 rc=0
+[PASS] 安装后 agent 在跑
+=== hide the unit, run the agent by hand ===
+[PASS] unit 已藏起：systemctl cat 失败
+manual agent pid: 1104
+[PASS] 手动 agent 在 127.0.0.1:53 上答规则 IP (UDP)
+[PASS] 手动 agent 进程存在
+[PASS] ss -tulnp 显示 127.0.0.1:53 归属 dnsunlock
+--- snapshot: green-09 pre-restore (no unit, manual agent) (2026-11-21T14:01:34Z) ---
+resolved: active=active enabled=enabled
+agent: active=inactive enabled=n/a pid=0
+ss :53 lines:
+udp   UNCONN 0      0          127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=1104,fd=7))       
+tcp   LISTEN 0      4096       127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=1104,fd=3))       
+resolv.conf: -rw-r--r-- 1 root root 21 Nov 21 14:01 /etc/resolv.conf
+  nameserver 127.0.0.1
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::ac42:93f3 example.com
+2606:4700:10::6814:179a example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 tiktok.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+=== restore --yes (port fallback must stop + restart it) ===
+restore (--yes) rc=0 (log /root/v016-verify/green-09-restore.log)
+[PASS] 还原 rc=0
+[PASS] 还原按端口找到无 unit 的 agent
+[PASS] 还原后 agent 已恢复运行（新 pid）
+manual agent pid before: 1104, agent pid after: 1339
+[PASS] 恢复的 agent 是新进程
+[PASS] 还原后 dig @127.0.0.1 tiktok.com (UDP) 返回规则 IP
+[PASS] 还原后 dig @127.0.0.53 example.com (UDP) 有结果
+[PASS] 还原后系统 DNS 可用
+--- snapshot: green-09 post-restore (2026-11-21T14:01:36Z) ---
+resolved: active=active enabled=enabled
+agent: active=inactive enabled=n/a pid=0
+ss :53 lines:
+udp   UNCONN 0      0          127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=1339,fd=6))       
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=1297,fd=20))
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=1297,fd=18))
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=1297,fd=21))
+tcp   LISTEN 0      4096       127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=1339,fd=3))       
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=1297,fd=19))
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 14:01 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients to the
+  # internal DNS stub resolver of systemd-resolved. This file lists all
+  # configured search domains.
+  #
+  # Run "resolvectl status" to see details about the uplink DNS servers
+  # currently in use.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 127.0.0.53
+  options edns0 trust-ad
+  search .
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 23.214.22.229   tiktok.com
+23.214.22.236   tiktok.com
+23.214.22.230   tiktok.com
+23.214.22.232   tiktok.com
+23.214.22.233   tiktok.com
+23.214.22.234   tiktok.com
+23.214.22.228   tiktok.com
+23.214.22.235   tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 104.20.23.154 172.66.147.243 
+dig @127.0.0.53 tiktok.com A (UDP): 23.214.22.232 23.214.22.235 23.214.22.236 23.214.22.233 23.214.22.228 23.214.22.230 23.214.22.229 23.214.22.234 
+=== green-09 done ===
+=== SUMMARY green-09: PASS=20 FAIL=0 ===

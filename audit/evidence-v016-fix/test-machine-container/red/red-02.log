@@ -1,0 +1,189 @@
+== red-02 start 2026-11-21T13:40:17Z baseline=374e7b7 panel=http://10.0.5.1:18280 ==
+--- reset_container ---
+--- reset done ---
+[PASS] 基线：resolved 在跑
+[PASS] 基线：stub 在 127.0.0.53:53 监听
+[PASS] 基线：无 drop-in
+[PASS] 基线：agent 不在跑
+[PASS] 基线：无临时状态
+[PASS] 基线：系统 DNS 可用
+[PASS] 基线：getent tiktok 不走规则
+--- snapshot: red-02 baseline (2026-11-21T13:40:20Z) ---
+resolved: active=active enabled=enabled
+agent: active=inactive enabled=n/a pid=0
+ss :53 lines:
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=844,fd=20))
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=844,fd=18))
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=844,fd=19))
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=844,fd=21))
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 13:40 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients to the
+  # internal DNS stub resolver of systemd-resolved. This file lists all
+  # configured search domains.
+  #
+  # Run "resolvectl status" to see details about the uplink DNS servers
+  # currently in use.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 127.0.0.53
+  options edns0 trust-ad
+  search .
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 23.214.22.233   tiktok.com
+23.214.22.237   tiktok.com
+23.214.22.232   tiktok.com
+23.214.22.230   tiktok.com
+23.214.22.234   tiktok.com
+23.214.22.228   tiktok.com
+23.214.22.235   tiktok.com
+23.214.22.236   tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 example.com A (UDP): 104.20.23.154 172.66.147.243 
+dig @127.0.0.53 tiktok.com A (UDP): 23.214.22.235 23.214.22.234 23.214.22.237 23.214.22.232 23.214.22.236 23.214.22.233 23.214.22.230 23.214.22.228 
+=== install permanent 127.0.0.1:53 (red) ===
+install (red --dns-listen 127.0.0.1:53) rc=0 (log /root/v016-verify/red-02-install.log)
+[PASS] 安装 rc=0
+[PASS] 安装后 agent 在跑
+[PASS] 安装后 getent tiktok 返回规则 IP
+[PASS] 安装后 getent example.com 走上游
+[PASS] 安装后 dig @127.0.0.1 tiktok.com (UDP) 返回规则 IP
+--- snapshot: red-02 after permanent install (stub disabled by takeover) (2026-11-21T13:40:25Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=969
+ss :53 lines:
+udp   UNCONN 0      0          127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=969,fd=8))        
+tcp   LISTEN 0      4096       127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=969,fd=3))        
+resolv.conf: -rw-r--r-- 1 root root 21 Nov 21 13:40 /etc/resolv.conf
+  nameserver 127.0.0.1
+drop-in: [Resolve] DNSStubListener=no 
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 tiktok.com A (UDP): ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; communications error to 127.0.0.53#53: connection refused ;; no servers could be reached 
+=== re-enable stub (resolved never disabled / re-enabled by OS update) ===
+[PASS] stub 已回 127.0.0.53:53
+[PASS] stub 与 agent 共存：dig @127.0.0.53 example.com (UDP) 有结果
+[PASS] agent 仍答：dig @127.0.0.1 tiktok.com (UDP) 返回规则 IP
+[PASS] 系统 DNS 仍可用
+--- snapshot: red-02 pre-restore (agent 127.0.0.1:53 + stub .53 both live) (2026-11-21T13:40:27Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=969
+ss :53 lines:
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=1111,fd=20))
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=1111,fd=18))
+udp   UNCONN 0      0          127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=969,fd=8))        
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=1111,fd=19))
+tcp   LISTEN 0      4096       127.0.0.1:53        0.0.0.0:*    users:(("dnsunlock",pid=969,fd=3))        
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=1111,fd=21))
+resolv.conf: -rw-r--r-- 1 root root 21 Nov 21 13:40 /etc/resolv.conf
+  nameserver 127.0.0.1
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 203.0.113.99    tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): 203.0.113.99 
+dig @127.0.0.53 example.com A (UDP): 104.20.23.154 172.66.147.243 
+dig @127.0.0.53 tiktok.com A (UDP): 23.214.22.233 23.214.22.237 23.214.22.235 23.214.22.236 23.214.22.230 23.214.22.228 23.214.22.232 23.214.22.234 
+=== restore --yes (red) — expect abort AFTER agent stopped ===
+restore (--yes) rc=1 (log /root/v016-verify/red-02-restore1.log)
+[PASS] 还原 rc=1（中止）
+[PASS] 还原报 ':53 仍被占' 中止
+[PASS] 还原后 agent 已死（悄悄丢失）
+[PASS] 还原后 dig @127.0.0.1 (UDP) 拒绝（无人应答）
+[PASS] 还原后 dig @127.0.0.53 example.com (UDP) 仍答（stub 活着）
+[PASS] 还原后 resolv.conf 仍指 127.0.0.1（未还原，DNS 更坏了）
+[PASS] 还原后系统 DNS 已死
+--- snapshot: red-02 after first restore (RED state) (2026-11-21T13:40:37Z) ---
+resolved: active=active enabled=enabled
+agent: active=inactive enabled=enabled pid=0
+ss :53 lines:
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=1111,fd=20))
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=1111,fd=18))
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=1111,fd=19))
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=1111,fd=21))
+resolv.conf: -rw-r--r-- 1 root root 21 Nov 21 13:40 /etc/resolv.conf
+  nameserver 127.0.0.1
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: FAIL
+getent example.com: FAIL
+dig @127.0.0.1 tiktok.com A (UDP): ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 example.com A (UDP): 172.66.147.243 104.20.23.154 
+dig @127.0.0.53 tiktok.com A (UDP): 23.216.145.74 23.216.145.83 23.216.145.84 23.216.145.90 
+=== restore again --yes (red) — expect false 'was not running' claim ===
+restore (--yes) rc=0 (log /root/v016-verify/red-02-restore2.log)
+[PASS] 二次还原报 'agent 还原前未在运行'
+[PASS] 二次还原后 agent 仍死
+--- snapshot: red-02 after second restore (2026-11-21T13:40:38Z) ---
+resolved: active=active enabled=enabled
+agent: active=inactive enabled=enabled pid=0
+ss :53 lines:
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=1390,fd=20))
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=1390,fd=18))
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=1390,fd=19))
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=1390,fd=21))
+resolv.conf: lrwxrwxrwx 1 root root 37 Nov 21 13:40 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+  # This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
+  # Do not edit.
+  #
+  # This file might be symlinked as /etc/resolv.conf. If you're looking at
+  # /etc/resolv.conf and seeing this text, you have followed the symlink.
+  #
+  # This is a dynamic resolv.conf file for connecting local clients to the
+  # internal DNS stub resolver of systemd-resolved. This file lists all
+  # configured search domains.
+  #
+  # Run "resolvectl status" to see details about the uplink DNS servers
+  # currently in use.
+  #
+  # Third party programs should typically not access this file directly, but only
+  # through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+  # different way, replace this symlink by a static file or a different symlink.
+  #
+  # See man:systemd-resolved.service(8) for details about the supported modes of
+  # operation for /etc/resolv.conf.
+  
+  nameserver 127.0.0.53
+  options edns0 trust-ad
+  search .
+drop-in: absent
+temp-state: ; boot-unit: absent
+pending-marker: absent
+getent tiktok.com: 23.214.22.235   tiktok.com
+23.214.22.234   tiktok.com
+23.214.22.237   tiktok.com
+23.214.22.233   tiktok.com
+23.214.22.228   tiktok.com
+23.214.22.229   tiktok.com
+23.214.22.232   tiktok.com
+23.214.22.230   tiktok.com
+getent example.com: 2606:4700:10::6814:179a example.com
+2606:4700:10::ac42:93f3 example.com
+dig @127.0.0.1 tiktok.com A (UDP): ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; communications error to 127.0.0.1#53: connection refused ;; no servers could be reached 
+dig @127.0.0.53 example.com A (UDP): 104.20.23.154 172.66.147.243 
+dig @127.0.0.53 tiktok.com A (UDP): 23.216.145.84 23.216.145.74 23.216.145.90 23.216.145.83 
+=== red-02 done ===
+=== SUMMARY red-02: PASS=25 FAIL=0 ===

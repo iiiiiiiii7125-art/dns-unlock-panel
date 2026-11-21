@@ -1,0 +1,2 @@
+2026/11/21 14:01:34 dns-agent listening on 127.0.0.1:53  panel=http://10.0.5.1:18280  server=srv-1795261390217084056
+2026/11/21 14:01:34 dns-agent: IPV6_RECVPKTINFO not supported on this socket (protocol not available); using IP_PKTINFO instead

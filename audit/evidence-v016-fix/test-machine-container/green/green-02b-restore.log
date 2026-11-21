@@ -1,0 +1,9 @@
+可用的备份（时间倒序）：
+  [1] 2026-11-21T13:56:58+0000  pre-takeover  DNS: 127.0.0.53   /var/lib/dnsunlock/backup/20261121-135658_pre-takeover
+  [2] 2026-11-21T13:56:45+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-135645_pre-restore
+  [3] 2026-11-21T13:56:36+0000  pre-takeover  DNS: 127.0.0.53   /var/lib/dnsunlock/backup/20261121-135636_pre-takeover
+非交互模式：默认还原最早的一份（原始状态）: /var/lib/dnsunlock/backup/20261121-135636_pre-takeover
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261121-135706_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-135706_pre-restore
+从备份还原: /var/lib/dnsunlock/backup/20261121-135636_pre-takeover（pre-takeover，2026-11-21T13:56:36+0000）
+错误: :53 上已有其他服务监听（0.0.0.0:53），重启 systemd-resolved 会抢不到 stub，还原已中止（agent 未动，系统 DNS 未改；只写了一份还原前备份 /var/lib/dnsunlock/backup/20261121-135706_pre-restore）；请先处理占 :53 的服务后重跑

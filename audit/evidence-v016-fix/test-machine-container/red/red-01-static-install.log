@@ -1,0 +1,51 @@
+y
+y
+y
+y
+y
+y
+检测到 systemd-resolved 的 stub 监听占着 127.0.0.53:53，agent 无法绑定 :53。
+可以只关掉 stub 监听（写 /etc/systemd/resolved.conf.d/dnsunlock.conf，DNSStubListener=no，并重启 systemd-resolved；不改 /etc/resolv.conf，不影响上游 DNS）。
+是否关掉 systemd-resolved 的 stub 监听？ [y/N] stub 已关，:53 现在可绑定。
+=== dnsunlock 安装 ===
+面板: http://10.0.5.1:18280
+[0/6] 装前检查：面板连通性 + token...
+server_id: srv-1795261390217084056（token 验证通过）
+[1/6] 下载 dnsunlock-linux-amd64 ...
+dnsunlock-linux-amd64: OK
+sha256 校验通过
+[2/6] 写配置...
+[3/6] 启动服务（不自动放行防火墙 53，请按 allowlist 自行放行）...
+Created symlink /etc/systemd/system/multi-user.target.wants/dnsunlock-agent.service → /etc/systemd/system/dnsunlock-agent.service.
+[0;1;32m●[0m dnsunlock-agent.service - dnsunlock DNS agent (split unlock)
+     Loaded: loaded (]8;;file://v016-test/etc/systemd/system/dnsunlock-agent.service/etc/systemd/system/dnsunlock-agent.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Sat 2026-11-21 13:42:26 UTC; 1s ago
+   Main PID: 539 (dnsunlock)
+      Tasks: 5[0;38;5;245m (limit: 2294)[0m
+     Memory: 1.3M
+        CPU: 5ms
+     CGroup: /system.slice/dnsunlock-agent.service
+             └─[0;38;5;245m539 /usr/local/bin/dnsunlock dns-agent --config /etc/dnsunlock/c…[0m
+
+Nov 21 13:42:26 v016-test systemd[1]: Started dnsunlock-agent.service - dns…ck).
+Nov 21 13:42:26 v016-test dnsunlock[539]: 2026/11/21 13:42:26 dns-agent lis…4056
+Hint: Some lines were ellipsized, use -l to show in full.
+[4/6] 装后验证...
+  验证通过: example.com 能走上游解析
+  提示: 再测一条已设规则的域名，如 dig @127.0.0.1 -p 53 netflix.com A，应返回规则里配的解锁 IP（未设规则时走上游属正常）。
+
+=== 临时模式（--temp）：只把本次运行的 DNS 指到 agent，不做永久接管 ===
+传输探测: UDP 到 agent 通，不写 options use-vc
+临时模式：已用 resolvectl 把 host0 的 DNS 设为 127.0.0.1（agent）。
+临时模式说明：本次只改了运行时 DNS，没有永久备份、没有 chattr 锁、没有停任何管理器。
+重启后失效（resolved 重启 / DHCP 续租 / 管理器运行时也可能失效）。
+要永久生效：重跑安装并选接管（本机系统 DNS 设为 127.0.0.1）。
+要立即还原：systemctl restart systemd-resolved（resolved 机器）或重新拉 DHCP（如 dhclient -r; dhclient，或重启 NetworkManager），或手动把 /etc/resolv.conf 改回原来的 DNS。
+  系统解析验证通过: example.com -> 2606:4700:10::6814:179a（getent，走系统解析器）
+
+=== 安装完成 ===
+面板: http://10.0.5.1:18280  (分流规则改动后约 5 秒生效)
+DNS 监听: :53
+测试: dig @127.0.0.1 -p 53 netflix.com A    # 应返回规则里配的解锁 IP
+      dig @127.0.0.1 -p 53 example.com A    # 应返回真实上游 IP
+日志: journalctl -u dnsunlock-agent -f     # 注意: 无查询日志, 只有计数与探活
