@@ -1,0 +1,10 @@
+#!/bin/bash
+# python3 stub（台架用）：chroot 里没有真 python3；只实现 install.sh
+# can_bind_listen 调的那一种——python3 - <host> <port>，用 bindprobe 做
+# 一次真 bind（UDP+TCP，SO_REUSEADDR），通 0 不通 1。其他用法直接报 1。
+if [ "$1" = "-" ] && [ -n "${3:-}" ]; then
+  # bindprobe 的输出不要漏进 install.sh 的 stdout（会污染安装日志），记到自家日志里
+  exec /root/rig/bin/bindprobe "${2:-}" "$3" >>/root/rig/logs/bindprobe.log 2>&1
+fi
+echo "stub python3: 不支持的调用: $*" >&2
+exit 1

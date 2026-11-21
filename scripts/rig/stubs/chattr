@@ -1,0 +1,15 @@
+#!/bin/bash
+# chattr stub（台架用）：记录调用，用 marker 文件模拟 immutable。
+# 真 chattr +i 在沙箱 overlayfs 上报 Operation not permitted（已实测），
+# 所以锁本身只能 stub 模拟；真文件系统上的行为列入测试机 nspawn 待验。
+STATE=/root/rig/state
+echo "$(date '+%H:%M:%S') chattr $*" >> /root/rig/logs/calls.log
+touch "$STATE/chattr.locked"
+if [ "$1" = "+i" ]; then
+  grep -qx "$2" "$STATE/chattr.locked" 2>/dev/null || echo "$2" >> "$STATE/chattr.locked"
+fi
+if [ "$1" = "-i" ]; then
+  grep -vx "$2" "$STATE/chattr.locked" > "$STATE/chattr.locked.tmp" 2>/dev/null || true
+  mv "$STATE/chattr.locked.tmp" "$STATE/chattr.locked" 2>/dev/null || true
+fi
+exit 0

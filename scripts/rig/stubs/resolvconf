@@ -1,0 +1,5 @@
+#!/bin/bash
+# resolvconf stub（台架用）：只记录调用。rootfs 里的 /usr/sbin/resolvconf
+# 只是指向 resolvectl 的软链，且真 resolved 跑不起来，故用 stub。
+echo "$(date '+%H:%M:%S') resolvconf $*" >> /root/rig/logs/calls.log
+exit 0

@@ -10,9 +10,11 @@ PURGE=0
 if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   echo "还原系统 DNS..."
   if [ -x /usr/local/bin/dnsunlock-restore-dns ]; then
-    /usr/local/bin/dnsunlock-restore-dns || { echo "还原失败，已保留 /etc/dnsunlock/ 下的全部备份，请手动处理"; exit 1; }
+    # v0.1.6：还原脚本默认要交互选备份；卸载是非交互流程，加 --yes
+    #（默认还原最早的一份 = 原始状态，还原前仍自动备份当前状态）。
+    /usr/local/bin/dnsunlock-restore-dns --yes || { echo "还原失败，已保留 /etc/dnsunlock/ 下的全部备份，请手动处理"; exit 1; }
   elif [ -f "$(dirname "$0")/restore-resolv.sh" ]; then
-    bash "$(dirname "$0")/restore-resolv.sh" || { echo "还原失败，已保留 /etc/dnsunlock/ 下的全部备份，请手动处理"; exit 1; }
+    bash "$(dirname "$0")/restore-resolv.sh" --yes || { echo "还原失败，已保留 /etc/dnsunlock/ 下的全部备份，请手动处理"; exit 1; }
   else
     echo "找不到还原脚本且存在原备份，停下不删：请手动用 /etc/dnsunlock/resolv.conf.orig 还原 /etc/resolv.conf"; exit 1
   fi

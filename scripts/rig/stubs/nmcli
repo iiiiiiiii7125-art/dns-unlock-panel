@@ -1,0 +1,22 @@
+#!/bin/bash
+# nmcli stub（台架用）：记录每次调用；活动连接给 canned 的两个 UUID。
+# 真 NM 守护进程不跑，只验“调对 nmcli”这一层。
+echo "$(date '+%H:%M:%S') nmcli $*" >> /root/rig/logs/calls.log
+if [ "$1" = "-t" ]; then
+  case "$*" in
+    *"UUID,DEVICE"*)
+      echo "aaaaaaaa-1111-2222-3333-444444444444:eth0"
+      echo "bbbbbbbb-2222-3333-4444-555555555555:eth1"
+      exit 0;;
+    *"UUID connection show --active"*)
+      echo "aaaaaaaa-1111-2222-3333-444444444444"
+      echo "bbbbbbbb-2222-3333-4444-555555555555"
+      exit 0;;
+  esac
+fi
+if [ "$1" = "-g" ]; then
+  # -g UUID connection show <id>：回显该 id（UUID 原样回显，供存在性核对）
+  echo "${@: -1}"
+  exit 0
+fi
+exit 0

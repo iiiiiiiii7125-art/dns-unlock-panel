@@ -1,0 +1,26 @@
+#!/bin/bash
+# 按 /etc/dnsunlock/config.json 起真 agent（模拟 systemd 启动 dnsunlock-agent）。
+# 等待监听端口 TCP 能连上（最多 10 秒），保证 install.sh [4/6] 的单次 dig 能通。
+LOG=/root/rig/logs/agent.log
+CFG=/etc/dnsunlock/config.json
+[ -f "$CFG" ] || { echo "start-agent: 无 $CFG" >> "$LOG"; exit 0; }
+PORT=$(sed -n 's/.*"dns_listen"[[:space:]]*:[[:space:]]*"[^"]*:\([0-9]*\)".*/\1/p' "$CFG" | head -1)
+[ -n "$PORT" ] || PORT=53
+# 先停掉之前起的 agent（按 PID 文件）
+if [ -f /root/rig/state/agent.pid ]; then
+  kill "$(cat /root/rig/state/agent.pid)" 2>/dev/null || true
+  sleep 1
+fi
+/root/rig/bin/dnsunlock dns-agent --config "$CFG" >> "$LOG" 2>&1 &
+echo $! > /root/rig/state/agent.pid  # 不用 nohup：直接 &，$! 就是 agent 本身
+echo "$(date '+%H:%M:%S') start-agent: pid $! port $PORT" >> /root/rig/logs/calls.log
+i=0
+while [ "$i" -lt 10 ]; do
+  if timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/$PORT" 2>/dev/null; then
+    echo "$(date '+%H:%M:%S') start-agent: 127.0.0.1:$PORT 已监听" >> /root/rig/logs/calls.log
+    exit 0
+  fi
+  sleep 1; i=$((i+1))
+done
+echo "$(date '+%H:%M:%S') start-agent: 警告：10 秒后 127.0.0.1:$PORT 仍未监听" >> /root/rig/logs/calls.log
+exit 0
