@@ -45,6 +45,9 @@ get_active_nm_connection_uuid() {
 
 # 与 install.sh 的 do_backup 同款（独立脚本，自带一份）：备份当前 DNS 状态。
 # stdout 只输出备份目录路径，说明打到 stderr。失败返回 1。
+# 注意：这份不做 install.sh 那边的 drop-in stash 逻辑——还原前备份拍的是
+# 现状，live drop-in 就是现状，整目录照抄就是对的；stash 只在接管那次备份
+# 里有意义（关 stub 在备份之前），由 install.sh 的 do_backup 处理。
 do_backup() {
   local label="$1" ts dir n=0 dns="" backends=""
   ts=$(date +%Y%m%d-%H%M%S)
@@ -207,7 +210,19 @@ restore_from_dir() {
   rm -f /etc/NetworkManager/conf.d/dnsunlock.conf
   # 2. 恢复各后端文件（只恢复备份里有的）。
   if [ -f "$dir/resolved.conf" ]; then cp -a "$dir/resolved.conf" /etc/systemd/resolved.conf 2>/dev/null || echo "警告: 恢复 /etc/systemd/resolved.conf 失败" >&2; fi
-  if [ -d "$dir/resolved.conf.d" ]; then
+  # resolved drop-in：备份里有 stash（接管时 disable_stub_listener 记的
+  # 接管前状态）就按 stash 来——之前没有 → 删掉接管写的；之前有 → 恢复原
+  # 内容。老备份无 stash 时按备份目录里的 resolved.conf.d 来（目录里有就
+  # 是接管前已有，没有就是接管前没有）。注意：stash 只在 install.sh 的接
+  # 管备份里产生；还原前备份拍的是现状，不带 stash，走目录分支。
+  if [ -f "$dir/resolved-dropin.absent" ]; then
+    rm -f /etc/systemd/resolved.conf.d/dnsunlock.conf
+    if [ -d "$dir/resolved.conf.d" ]; then mkdir -p /etc/systemd/resolved.conf.d; cp -a "$dir/resolved.conf.d/." /etc/systemd/resolved.conf.d/ 2>/dev/null || echo "警告: 恢复 resolved.conf.d 失败" >&2; fi
+  elif [ -f "$dir/resolved-dropin.orig" ]; then
+    mkdir -p /etc/systemd/resolved.conf.d
+    cp -a "$dir/resolved-dropin.orig" /etc/systemd/resolved.conf.d/dnsunlock.conf 2>/dev/null || echo "警告: 恢复 resolved drop-in 原内容失败" >&2
+    if [ -d "$dir/resolved.conf.d" ]; then cp -a "$dir/resolved.conf.d/." /etc/systemd/resolved.conf.d/ 2>/dev/null || echo "警告: 恢复 resolved.conf.d 失败" >&2; fi
+  elif [ -d "$dir/resolved.conf.d" ]; then
     rm -f /etc/systemd/resolved.conf.d/dnsunlock.conf
     cp -a "$dir/resolved.conf.d/." /etc/systemd/resolved.conf.d/ 2>/dev/null || echo "警告: 恢复 resolved.conf.d 失败" >&2
   else

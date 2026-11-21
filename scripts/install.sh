@@ -205,6 +205,17 @@ stub_only_conflict() {
 }
 
 disable_stub_listener() {
+  # 先把关 stub 之前的 drop-in 状态存起来：do_backup 在关 stub 之后才跑，
+  # 不存的话备份里会带着接管刚写的 drop-in，还原时又把它恢复回来（stub
+  # 永远关不回去）。存到 /etc/dnsunlock/，do_backup 会收进备份并消费掉。
+  mkdir -p /etc/dnsunlock
+  if [ -f /etc/systemd/resolved.conf.d/dnsunlock.conf ]; then
+    cp -a /etc/systemd/resolved.conf.d/dnsunlock.conf /etc/dnsunlock/resolved-dropin.orig 2>/dev/null || true
+    rm -f /etc/dnsunlock/resolved-dropin.absent
+  else
+    : > /etc/dnsunlock/resolved-dropin.absent
+    rm -f /etc/dnsunlock/resolved-dropin.orig
+  fi
   mkdir -p /etc/systemd/resolved.conf.d
   printf '[Resolve]\nDNSStubListener=no\n' > /etc/systemd/resolved.conf.d/dnsunlock.conf
   systemctl restart systemd-resolved
@@ -304,6 +315,19 @@ do_backup() {
   if [ -L /etc/resolv.conf ]; then readlink /etc/resolv.conf > "$dir/resolv.conf.symlink" 2>/dev/null || true; fi
   [ -f /etc/systemd/resolved.conf ] && cp -a /etc/systemd/resolved.conf "$dir/resolved.conf" 2>/dev/null || true
   [ -d /etc/systemd/resolved.conf.d ] && cp -a /etc/systemd/resolved.conf.d "$dir/resolved.conf.d" 2>/dev/null || true
+  # drop-in 的接管前状态（见 disable_stub_listener 的 stash）：只有 live
+  # 内容确实是接管写的标准内容时才按 stash 走——用户若手动改过 drop-in，
+  # live 内容就不是标准内容，此时现状即备份，不用 stash。stash 用完即删，
+  # 不留给下次接管误用。注意：还原脚本那份 do_backup 不做这段（还原前备份
+  # 拍的是现状，live drop-in 就是现状），两份故意不一致，见那边的注释。
+  if [ -f /etc/dnsunlock/resolved-dropin.absent ] || [ -f /etc/dnsunlock/resolved-dropin.orig ]; then
+    if [ -f /etc/systemd/resolved.conf.d/dnsunlock.conf ] && [ "$(cat /etc/systemd/resolved.conf.d/dnsunlock.conf 2>/dev/null)" = $'[Resolve]\nDNSStubListener=no' ]; then
+      cp -a /etc/dnsunlock/resolved-dropin.orig "$dir/resolved-dropin.orig" 2>/dev/null || true
+      cp -a /etc/dnsunlock/resolved-dropin.absent "$dir/resolved-dropin.absent" 2>/dev/null || true
+      rm -f "$dir/resolved.conf.d/dnsunlock.conf"
+    fi
+    rm -f /etc/dnsunlock/resolved-dropin.orig /etc/dnsunlock/resolved-dropin.absent
+  fi
   [ -d /etc/NetworkManager/conf.d ] && cp -a /etc/NetworkManager/conf.d "$dir/NetworkManager-conf.d" 2>/dev/null || true
   if ls /etc/netplan/*.yaml >/dev/null 2>&1; then mkdir -p "$dir/netplan" && cp -a /etc/netplan/*.yaml "$dir/netplan/" 2>/dev/null || true; fi
   [ -f /etc/nsswitch.conf ] && cp -a /etc/nsswitch.conf "$dir/nsswitch.conf" 2>/dev/null || true
@@ -639,8 +663,10 @@ fi
 
 # v0.1.3: 先探面板，443 被挡时自动改走 :8080（每步最多等 8 秒，不会卡 134 秒）。
 # v0.1.6 item 6：探不到时给手动输入面板地址的入口（resolve_panel_base）。
-# PANEL_URL 是登记的规范地址（写进配置文件，agent 运行时自己也会逐个试）；
-# PANEL_BASE 是本次安装实际用的地址。
+# PANEL_URL 是登记的规范地址；PANEL_BASE 是本次安装实际用的地址
+# （443 被挡自动改走 :8080、或手动输入的地址）。
+# agent 配置里记 PANEL_BASE——记 PANEL_URL 的话，改走/手动输入的地址下
+# agent 永远连不上面板（只会试 PANEL_URL 及其 :8080 变体），规则拉不到。
 PANEL_BASE="$(resolve_panel_base "$PANEL_URL")" || exit 1
 if [ "$PANEL_BASE" != "$PANEL_URL" ]; then
   echo "面板 443 不通，已自动改走 $PANEL_BASE（面板直连 :8080）。"
@@ -747,7 +773,7 @@ echo "[2/6] 写配置..."
 cat > /etc/dnsunlock/config.json <<EOF
 {
   "mode": "dns-agent",
-  "panel_url": "$PANEL_URL",
+  "panel_url": "$PANEL_BASE",
   "agent_token": "$TOKEN",
   "server_id": "$SERVER_ID",
   "dns_listen": "$DNS_LISTEN",
@@ -1014,6 +1040,9 @@ get_active_nm_connection_uuid() {
 
 # 与 install.sh 的 do_backup 同款（独立脚本，自带一份）：备份当前 DNS 状态。
 # stdout 只输出备份目录路径，说明打到 stderr。失败返回 1。
+# 注意：这份不做 install.sh 那边的 drop-in stash 逻辑——还原前备份拍的是
+# 现状，live drop-in 就是现状，整目录照抄就是对的；stash 只在接管那次备份
+# 里有意义（关 stub 在备份之前），由 install.sh 的 do_backup 处理。
 do_backup() {
   local label="$1" ts dir n=0 dns="" backends=""
   ts=$(date +%Y%m%d-%H%M%S)
@@ -1176,7 +1205,19 @@ restore_from_dir() {
   rm -f /etc/NetworkManager/conf.d/dnsunlock.conf
   # 2. 恢复各后端文件（只恢复备份里有的）。
   if [ -f "$dir/resolved.conf" ]; then cp -a "$dir/resolved.conf" /etc/systemd/resolved.conf 2>/dev/null || echo "警告: 恢复 /etc/systemd/resolved.conf 失败" >&2; fi
-  if [ -d "$dir/resolved.conf.d" ]; then
+  # resolved drop-in：备份里有 stash（接管时 disable_stub_listener 记的
+  # 接管前状态）就按 stash 来——之前没有 → 删掉接管写的；之前有 → 恢复原
+  # 内容。老备份无 stash 时按备份目录里的 resolved.conf.d 来（目录里有就
+  # 是接管前已有，没有就是接管前没有）。注意：stash 只在 install.sh 的接
+  # 管备份里产生；还原前备份拍的是现状，不带 stash，走目录分支。
+  if [ -f "$dir/resolved-dropin.absent" ]; then
+    rm -f /etc/systemd/resolved.conf.d/dnsunlock.conf
+    if [ -d "$dir/resolved.conf.d" ]; then mkdir -p /etc/systemd/resolved.conf.d; cp -a "$dir/resolved.conf.d/." /etc/systemd/resolved.conf.d/ 2>/dev/null || echo "警告: 恢复 resolved.conf.d 失败" >&2; fi
+  elif [ -f "$dir/resolved-dropin.orig" ]; then
+    mkdir -p /etc/systemd/resolved.conf.d
+    cp -a "$dir/resolved-dropin.orig" /etc/systemd/resolved.conf.d/dnsunlock.conf 2>/dev/null || echo "警告: 恢复 resolved drop-in 原内容失败" >&2
+    if [ -d "$dir/resolved.conf.d" ]; then cp -a "$dir/resolved.conf.d/." /etc/systemd/resolved.conf.d/ 2>/dev/null || echo "警告: 恢复 resolved.conf.d 失败" >&2; fi
+  elif [ -d "$dir/resolved.conf.d" ]; then
     rm -f /etc/systemd/resolved.conf.d/dnsunlock.conf
     cp -a "$dir/resolved.conf.d/." /etc/systemd/resolved.conf.d/ 2>/dev/null || echo "警告: 恢复 resolved.conf.d 失败" >&2
   else
@@ -1351,7 +1392,7 @@ chmod +x /usr/local/bin/dnsunlock-restore-dns
 echo
 echo "=== 安装完成 ==="
 echo "面板: $PANEL_URL  (分流规则改动后约 5 秒生效)"
-[ "$PANEL_BASE" != "$PANEL_URL" ] && echo "本次安装实际走的是 $PANEL_BASE（443 不通自动走 :8080）；agent 配置里仍记 $PANEL_URL，运行时会自动试两个地址。"
+[ "$PANEL_BASE" != "$PANEL_URL" ] && echo "本次安装实际走的是 $PANEL_BASE（443 不通自动走 :8080）；agent 配置里记的也是 $PANEL_BASE（运行时会试它及其 :8080 变体）。"
 echo "DNS 监听: $DNS_LISTEN"
 echo "测试: dig @$_dl_host -p $_dl_port netflix.com A    # 应返回规则里配的解锁 IP"
 echo "      dig @$_dl_host -p $_dl_port example.com A    # 应返回真实上游 IP"
