@@ -7,7 +7,16 @@ set -euo pipefail
 PURGE=0
 [ "${1:-}" = "--purge" ] && PURGE=1
 # 1. 还原系统 DNS（如果安装时接管过）。还原失败 -> 停下，不删备份。
-if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
+# 接管痕迹有三种，任一存在都要先还原（V016-33：以前只认单份 .orig，
+# 结构化备份还在时也会跳过还原直接删 agent）：
+#   - /etc/dnsunlock/resolv.conf.orig（老版本单份备份）
+#   - /var/lib/dnsunlock/backup/*/（v0.1.6 结构化备份）
+#   - /etc/dnsunlock/temp-state/state（--temp 临时模式的状态记录）
+TAKEOVER=0
+[ -e /etc/dnsunlock/resolv.conf.orig ] && TAKEOVER=1
+ls -d /var/lib/dnsunlock/backup/*/ >/dev/null 2>&1 && TAKEOVER=1
+[ -e /etc/dnsunlock/temp-state/state ] && TAKEOVER=1
+if [ "$TAKEOVER" = 1 ]; then
   echo "还原系统 DNS..."
   if [ -x /usr/local/bin/dnsunlock-restore-dns ]; then
     # v0.1.6：还原脚本默认要交互选备份；卸载是非交互流程，加 --yes
@@ -16,7 +25,7 @@ if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   elif [ -f "$(dirname "$0")/restore-resolv.sh" ]; then
     bash "$(dirname "$0")/restore-resolv.sh" --yes || { echo "还原失败（或还原后验证未通过），已停下，未删任何东西：/etc/dnsunlock/ 下的全部备份已保留；请先手动检查 DNS 是否已恢复（getent hosts example.com），处理好后再重跑卸载"; exit 1; }
   else
-    echo "找不到还原脚本且存在原备份，停下不删：请手动用 /etc/dnsunlock/resolv.conf.orig 还原 /etc/resolv.conf"; exit 1
+    echo "找不到还原脚本，但存在 DNS 接管痕迹（/etc/dnsunlock/resolv.conf.orig、/var/lib/dnsunlock/backup/ 下的备份或 /etc/dnsunlock/temp-state），停下不删：请手动把 /etc/resolv.conf 还原（备份见上），再重跑卸载"; exit 1
   fi
 fi
 # 2. 停服务、删 unit。
