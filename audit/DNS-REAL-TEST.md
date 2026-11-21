@@ -212,3 +212,80 @@
   的判定本就不冲突；UI 的 409 confirm+force 代码原文保留，未动）。
 - 已 rebase 到 v0.1.4（98aa615）之上：本机回环降级（agent.go / install.sh）已包含在内；另含 install.sh 修补：stdin 关闭且无 tty 时 ask() 不再静默退出，改为报错退出。
 
+## v0.1.5（续）：按 AKDNS 控制台实测改规则页（2026-11-21）
+
+来源：用户在登录状态的 AKDNS 控制台只读探索（/console/ip，66 个服务，8/66 已开启），
+实测细节见 MEMORY.md（2026-11-21 15:08 条）。改动仅 web/index.html +
+internal/panel/assets/index.html（两份字节一致）。
+
+照抄的：
+- 卡片格 6 列（响应式收窄 5/4/3/2）；卡片结构：左侧 logo 色块，右侧名称 + 状态行；
+  已开启蓝边 + 浅蓝底 + 左上角地区小旗（文字码，如 TW(HK)/JP/MO）；未开启灰边 +
+  状态行“未开启”；名称过长截断省略号（中文名放悬停提示 + 编辑器标题 + 表格）。
+- 两级后端选择：点卡片 → 嵌套“选择后端”弹窗（标题 + “选择 <服务名> 的出口节点”），
+  后端平铺（地区码 + 地区名，5 列），当前项蓝边高亮；底部左侧“不开启”、右侧“完成”，
+  右上角 X / 点空白处取消不改动；点“完成”回网格（未保存态），点底部“保存配置”才 PUT。
+- 搜索框实时过滤卡片，焦点蓝边 + 清除 ×；备注输入框 + 独立“保存备注”按钮。
+- 底部操作栏（sticky 底栏）：删除（红描边）/ 导出 / 导入 / 保存配置（蓝实心，带未保存条数）。
+
+映射（模型不同，取舍如下）：
+- 后端选项 = 该平台在 data/platforms.json 里的 regions_available（每平台集合不同，
+  与 AKDNS“Disney+ 9 个、Sora 5 个”的思路一致）；AKDNS 的运营商名后端（SoftBank、
+  HINET）我们数据里没有，只有地区码，不造。
+- 弹窗只选地区（region）；节点/自定义 IP 仍留在卡片下方编辑器里，编辑器按钮改名
+  “暂存修改”，同样只进 PENDING。表格行仍是立即保存（老行为不动），只有卡片网格
+  走批量暂存；409 冲突在批量保存时不自动强制，记为失败并提示去表格里强制保存。
+- 备注没有后端接口：只存本机浏览器 localStorage，界面写明“仅保存在本机浏览器，
+  换电脑就没了”；要后端存由用户定。
+- 导出 = 当前全部已设规则下载为 JSON（纯前端，格式 {app:'dnsunlock',version:1,
+  exported_at,rules:[{platform_id,mode,region,node_id,custom_ip,nameserver,backup_ip,
+  auto_failover}]}）；导入读回同一格式（也接受裸数组），逐条 PUT，失败逐条汇总报告。
+- 删除 = 清除全部已设置规则（二次确认，立即生效；暂存的改动一起丢弃）。AKDNS 的
+  删除是删 IP，我们没有按 IP 的模型，按用户要求定义为清规则。
+- 规则仍是全局按平台，不改成按 IP（用户定）。卡片网格仍是 Tier-1 12 张热门
+  （AKDNS 是全部 66 张，因为它没有表格；我们保留全部 169 平台的表格作为完整入口，
+  搜索时卡片格显示最多 30 张匹配）。
+- 15 秒轮询仍只在 config_version 变化时重渲染；PENDING 是内存态，轮询重渲染不丢
+  暂存（未保存徽章、底部计数、已设置条里的暂存芯片都保留）。
+
+没做的：自测/测速按钮（AKDNS 控制台里也没有，用户已定 v0.1.6 再做 5 项）；
+“复制 DNS / 复制配置”按钮（实测没看到）；购买流量/计费等商业功能（不适用）。
+
+沙箱验证（2026-11-21，v0.1.5 构建本地 :18081，临时数据）：
+- `node --check` 内联脚本通过；served index.html 含 repeat(6,1fr)、backendModal、
+  backendOpts、ruleBar、saveAllBtn、ruleNote、qClear、hot-pend、pend-chip、
+  saveAllPending、clearAllRules、exportRules、onImportFile、stageEditor、backendDone
+  等全部新标记；served install.sh 含 no_input（5 处）与 127.0.0.1:8080 降级。
+- API 契约：登录/改密/重登录；169 平台、16 规则；PUT tiktok（卡片编辑器同款 body，
+  region JP + custom_ip 203.0.113.99）→ 生效，清除 → cleared，config_version 1→3；
+  各平台 regions_available 正常（tiktok 16 个、netflix/disneyplus 24 个），弹窗选项有源。
+
+测试机验证（ip-172-26-15-152，2026-11-21 07:13–07:33 UTC，v0.1.5 构建
+amd64 c8e8a403fedfbc97f487895da1d0fa6317f47d59b5a3b30850604f9dfca482de）：
+- 上传：128KB 分块 ×75，c72 一块隧道断流重传一次，重拼 sha256 一致。
+- 面板换 v0.1.5 二进制，dist amd64 + sha256 已更新（sha256sum -c 全 OK），
+  served index.html 与源码哈希一致（a7b65968…），全部新标记齐全。
+- API：登录 admin/DnsTest2026!Real；PUT tiktok JP + custom_ip 203.0.113.99 →
+  dig 203.0.113.99；清除；恢复种子 tiktok→US → dig 203.0.113.20。
+- (A) 安装降级——通过。--panel https://10.255.255.1（黑洞）：探测两个死地址
+  各 8 秒超时后自动改走 http://127.0.0.1:8080，6 步完成（token 验证通过，sha256
+  通过），agent 配置记 panel_url https://10.255.255.1；首次拉配置约 20 秒后
+  dig netflix/disneyplus → 203.0.113.10（初测 7 秒时仍返回上游真实 IP，只因首次
+  拉配置还没完成，不是故障）。
+- (B) agent 运行时降级——通过。主地址已死的情况下，面板改规则 disneyplus
+  HK→US，30 秒内生效（dig → 203.0.113.20），改回 HK 同样生效（203.0.113.10）。
+- (C) 回归——通过。--panel http://127.0.0.1:8080 直接用主地址，无探测失败、
+  无“自动改走”提示，6 步完成，dig netflix → 203.0.113.10。
+- (E) stdin-EOF 修补前后对照——通过。同一条件（token 走环境变量、stdin 关闭、
+  无 tty）：旧版 install.sh 在 [1/6] 下载校验通过后静默退出 1，无任何报错；
+  新版在同一点打印“错误：无法读取输入（stdin 已关闭且无可用终端）。请用面板生成
+  的安装命令（自带 DNS_AGENT_TOKEN），或先把脚本下载下来再执行。”后退出 1。
+  （附带：安装前需先停掉占着 :53 的 agent，否则安装脚本在装前检查就拒绝。）
+- 恢复：临时服务器 测试-自动5（srv-1795245861432087076）已删（只剩 TEST-DNS-01）；
+  agent 配置已还原为 TEST-DNS-01（panel_url http://127.0.0.1:8080）；面板二进制
+  与 dist 已还原为测试前状态（1084e5e9…，sha256sum -c 全 OK）；规则与测试前快照
+  逐条一致；dig netflix/hulu/disneyplus → 203.0.113.10/203.0.113.20/203.0.113.10；
+  resolv.conf 未动（Tailscale 托管）；面板+agent 均 active。
+- 未在测试机上用浏览器点过：卡片点开弹窗、弹窗里选后端、搜索实时过滤、备注保存、
+  底部四个按钮的实际点击、15 秒轮询不跳动——这些是纯前端交互，需在浏览器里点一遍；
+  已验证的是 served 标记、node --check、API 契约与后端行为。
