@@ -234,7 +234,7 @@ ask_yes_no() {
 # 优先 getent hosts（走 glibc，遵守 resolv.conf 的 options use-vc），
 # 缺 getent 回退不带 @server 的 dig（use-vc 时加 +tcp）。
 # 返回 0=解析成功，1=解析失败，2=没工具（只警告，不 abort）。
-# 注意：缺 dig 只在这里可降级；测速环节缺 dig 仍是致命的（两处不要混淆）。
+# 注意：缺 dig 只在这里可降级（警告并继续）。
 verify_system_dns() {
   local domain="$1" out=""
   if command -v getent >/dev/null 2>&1; then
@@ -821,7 +821,7 @@ if command -v dig >/dev/null 2>&1; then
 else
   # v0.1.6 item 2：缺 dig 不再 exit 1——区分“测不了”和“测了不通”。
   # 测不了只警告 + 继续安装（接管步必须能跑到）；dig 在但解析无结果仍是硬失败（见上）。
-  # 注意：测速环节缺 dig 仍是致命的（见 pick_fastest_ip / run_speed_test 的约定），只在应用后验证环节可降级。
+  # 注意：只在应用后验证环节可降级（缺 dig 时警告并继续）。
   echo "  警告: 未装 dig，无法自动验证解析，继续安装（agent 本身不受影响）。"
   echo "  请手动验证：dig @$_dl_host -p $_dl_port example.com A（装 dig：Debian/Ubuntu 用 apt-get install -y dnsutils，RHEL/CentOS 用 yum install -y bind-utils）"
   echo "  也可不用 dig：getent hosts example.com（走系统解析器；接管后才有效）"
