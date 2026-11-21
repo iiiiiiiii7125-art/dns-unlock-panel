@@ -1351,11 +1351,14 @@ cat > /usr/local/bin/dnsunlock-restore-dns <<'RESTORE_EOF'
 # 还原默认选最早的一份（原始状态），还原前先自动备份当前状态，失败就中止；
 # 还原后验证并报告“已还原并验证通过”或“已还原但验证未通过”。
 # 老版本单份备份 /etc/dnsunlock/resolv.conf.orig 仍认（无备份目录时走老路）。
-# 用法：dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup] [--boot]
+# 用法：dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup] [--boot] [--force]
 #   --yes     非交互：默认还原最早的一份，不再逐项确认（供 uninstall.sh 等脚本调用）
 #   --backup  指定要还原的备份目录（须含 resolv.conf），与 --yes 合用可全程非交互
 #   --temp-cleanup  只清理 --temp 临时模式留下的运行时 DNS；清理失败返回 1（状态已保留）
 #   --boot    与 --temp-cleanup 合用（开机 oneshot unit 用）：清理失败也返回 0
+#   --force   还原后验证失败时仍按成功退出（跳过 fail-closed 检查）：大声警告、
+#             绝不默认；仅用于验证永不过的环境自救（离线机器、占位暂清不掉）。
+#             操作者是 root，且还原前已有 pre-restore 备份，可逆。
 set -euo pipefail
 [ "$(id -u)" = "0" ] || { echo "请用 root 运行"; exit 1; }
 
@@ -2268,10 +2271,12 @@ cleanup_temp_state() {
 YES=0
 WANT_DIR=""
 BOOT_CLEANUP=0
+FORCE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --yes) YES=1; shift;;
     --backup) WANT_DIR="$2"; shift 2;;
+    --force) FORCE=1; shift;;
     --boot)
       # 只与 --temp-cleanup 合用（开机 oneshot unit 调它时放前面）：
       # 表示本次调用来自开机 unit，清理失败也返回 0（警告写进日志），
@@ -2288,11 +2293,12 @@ while [ $# -gt 0 ]; do
       cleanup_temp_state || exit 1
       exit 0;;
     --help|-h)
-      echo "用法: dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup] [--boot]"
+      echo "用法: dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup] [--boot] [--force]"
       echo "  --yes     非交互：默认还原最早的一份（原始状态），不再逐项确认"
       echo "  --backup  指定要还原的备份目录（须含 resolv.conf）"
       echo "  --temp-cleanup  只清理 --temp 临时模式留下的运行时 DNS（按临时状态记录）；清理失败返回 1（状态已保留，可重跑）"
       echo "  --boot    与 --temp-cleanup 合用（开机 oneshot unit 用）：清理失败也返回 0，警告写进日志"
+      echo "  --force   还原后验证失败时仍按成功退出（跳过 fail-closed 检查）：大声警告、绝不默认；仅用于验证永不过的环境自救，还原前已有 pre-restore 备份，可逆"
       exit 0;;
     *) echo "未知参数: $1"; exit 1;;
   esac
@@ -2352,8 +2358,16 @@ if [ -n "$CHOSEN" ]; then
   # （中止时 DNS 未改，临时状态仍有效）。
   clear_temp_state
   if [ "$VERIFY_RC" != 0 ]; then
-    echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
-    exit 1
+    # V016-10 --force：验证失败且给了 --force 时继续走（带醒目警告）而不
+    # 是 exit 1。操作者是 root，还原前已有 pre-restore 备份，可逆。
+    if [ "$FORCE" = 1 ]; then
+      echo "!!!! 警告：--force 已启用，还原后验证未通过仍按成功退出（跳过了 fail-closed 检查）!!!!" >&2
+      echo "!!!! 当前 DNS 状态：resolv.conf 已按备份 $CHOSEN 还原，但 getent/dig 验证无结果，系统 DNS 可能仍不可用；请立即手动验证：getent hosts example.com。" >&2
+      echo "!!!! 可逆：还原前已自动备份当前状态 -> $PRE_RESTORE_BACKUP；如需回滚：dnsunlock-restore-dns --backup \"$PRE_RESTORE_BACKUP\" --yes。" >&2
+    else
+      echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
+      exit 1
+    fi
   fi
   exit 0
 fi
@@ -2374,8 +2388,16 @@ if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   # R2-01：同上，还原已完成即清临时状态（中止路径不调）。
   clear_temp_state
   if [ "$VERIFY_RC" != 0 ]; then
-    echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
-    exit 1
+    # V016-10 --force：同 CHOSEN 分支，验证失败且给了 --force 时带醒目
+    # 警告继续走而不是 exit 1（操作者是 root，还原前已有备份，可逆）。
+    if [ "$FORCE" = 1 ]; then
+      echo "!!!! 警告：--force 已启用，还原后验证未通过仍按成功退出（跳过了 fail-closed 检查）!!!!" >&2
+      echo "!!!! 当前 DNS 状态：resolv.conf 已按 /etc/dnsunlock/resolv.conf.orig 还原，但 getent/dig 验证无结果，系统 DNS 可能仍不可用；请立即手动验证：getent hosts example.com。" >&2
+      echo "!!!! 可逆：还原前已自动备份当前状态 -> $PRE_RESTORE_BACKUP；如需回滚：dnsunlock-restore-dns --backup \"$PRE_RESTORE_BACKUP\" --yes。" >&2
+    else
+      echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
+      exit 1
+    fi
   fi
   exit 0
 fi
