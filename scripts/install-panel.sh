@@ -2,8 +2,10 @@
 # dnsunlock 面板一键安装（P0-01）。
 # 用法（在任意一台 VPS 上，root）：
 #   curl -fsSL https://raw.githubusercontent.com/iiiiiiiii7125-art/dns-unlock-panel/main/scripts/install-panel.sh | bash
-#   # 或下载后：bash install-panel.sh --domain dns.example.com   （填域名 -> Caddy 自动 HTTPS 反代）
-#   #            bash install-panel.sh                          （不填域名 -> 只跑 8080）
+#   # 跑起来后会问你要不要填域名：填了就配 Caddy 自动反代 + HTTPS，
+#   # 留空只跑 8080，不配反代；也可以直接传参跳过询问：
+#   #   bash install-panel.sh --domain dns.example.com   （填域名 -> Caddy 自动 HTTPS 反代）
+#   #   bash install-panel.sh                          （不填域名 -> 只跑 8080）
 # 注意：本脚本只装面板本身（8080）+ 可选 Caddy 反代；不装 DNS agent，不碰 resolv.conf。
 set -euo pipefail
 DOMAIN=""
@@ -15,6 +17,19 @@ while [ $# -gt 0 ]; do
     *) echo "未知参数: $1"; exit 1;;
   esac
 done
+# 没传 --domain 时交互式问域名：管道安装（curl | bash）时 stdin 是脚本
+# 本身，所以从 /dev/tty 读；没有终端（如自动化）就跳过询问，默认只跑 8080。
+# 注意：/dev/tty 即使存在也可能打不开（无控制终端），先在重定向了
+# stderr 的复合命令里试开，失败时静默跳过，不要把报错打出来。
+# 提示语要单独打到 /dev/tty 上：read -p 的提示走 stderr，不能跟
+# 2>/dev/null 一起用，否则用户看不到问题。
+if [ -z "$DOMAIN" ]; then
+  if { : < /dev/tty; } 2>/dev/null; then
+    printf '%s' "域名（填了就配 Caddy 自动反代 + HTTPS；留空只跑 :8080，不配反代）: " > /dev/tty
+    read -r DOMAIN < /dev/tty || true
+    DOMAIN="$(printf '%s' "$DOMAIN" | tr -d '[:space:]')"
+  fi
+fi
 # P0-01 残留：域名/端口格式先校验，不合规直接停，不装一半再报错。
 if [ -n "$DOMAIN" ]; then
   case "$DOMAIN" in
