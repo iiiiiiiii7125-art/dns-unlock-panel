@@ -769,9 +769,15 @@ function serverInstallCmd(s,token,defip){
 }
 let LAST_SRV_CMD='';
 function copySrvInstall(){if(LAST_SRV_CMD)navigator.clipboard.writeText(LAST_SRV_CMD)}
+// R2-06：reveal 失败不再静默 reject——与 copyNodeInstall（V016-21）对齐：
+// 失败时如实报错、不复制；token 为空同样不复制（否则会拷出
+// DNS_AGENT_TOKEN=undefined 的坏命令）。
 async function copyServerInstall(id){
   const s=SERVERS.find(x=>x.id===id);if(!s)return;
-  const j=await api('/api/v1/servers/'+id+'/reveal');
+  let j;
+  try{j=await api('/api/v1/servers/'+id+'/reveal')}
+  catch(e){alert('取 token 失败，命令未复制：'+(e.message||e)+'。请稍后重试，或重新登录后再试。');return}
+  if(!j||!j.token){alert('服务器未返回 token，命令未复制。请稍后重试，或重新登录后再试。');return}
   navigator.clipboard.writeText(serverInstallCmd(s,j.token,j.default_unlock_ip));
   alert('安装命令已复制，到目标 VPS 粘贴执行即可。');
 }
