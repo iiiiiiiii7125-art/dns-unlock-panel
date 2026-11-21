@@ -1,0 +1,18 @@
+2026/11/21 22:18:32 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:18:34 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:19:15 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:19:55 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:20:35 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:21:15 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:22:07 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:22:48 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:23:42 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:24:21 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:25:42 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:26:22 dns-agent listening on 127.0.0.1:15353  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:26:22 dns-agent: IPV6_RECVPKTINFO not supported on this socket (protocol not available); using IP_PKTINFO instead
+2026/11/21 22:27:04 dns-agent listening on 127.0.0.1:15353  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:27:04 dns-agent: IPV6_RECVPKTINFO not supported on this socket (protocol not available); using IP_PKTINFO instead
+2026/11/21 22:27:05 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:27:24 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051
+2026/11/21 22:28:04 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795299511781387051

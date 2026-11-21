@@ -1,0 +1,14 @@
+台架证据日志：/home/hatch/workspace/dns-unlock-panel-v016r2-rig/audit/evidence-v016r2-fix/rig-20261121-2217Z.log（逐场景日志见 /home/hatch/workspace/dns-unlock-panel-v016r2-rig/audit/evidence-v016r2-fix/rig-20261121-2217Z-scenarios）
+台架基线 commit: 570b631b4957ac261229b5b88f8eb12e7ea87178
+台架单跑锁已持有：/tmp/rig-v016-takeover.lock
+错误：台架端口 127.0.0.1:15353 起跑前已被占用，拒绝起跑（R2-14 跑前检查）。
+udp   UNCONN 0      0          127.0.0.1:15353      0.0.0.0:*    users:(("python3",pid=41296,fd=3))
+tcp   LISTEN 0      0          127.0.0.1:15353      0.0.0.0:*    users:(("python3",pid=41296,fd=4))
+  可能原因：另一 lane 的残留 agent、并行跑台架，或外来进程占了该端口。
+  处理：停掉上面列出的占用进程（或等另一 lane 跑完）后再跑；不要带占用硬跑，会跑出假结果。
+逐场景日志已归档：/home/hatch/workspace/dns-unlock-panel-v016r2-rig/audit/evidence-v016r2-fix/rig-20261121-2217Z-scenarios（0 个文件）
+台架证据日志：/home/hatch/workspace/dns-unlock-panel-v016r2-rig/audit/evidence-v016r2-fix/rig-20261121-2217Z.log（逐场景日志见 /home/hatch/workspace/dns-unlock-panel-v016r2-rig/audit/evidence-v016r2-fix/rig-20261121-2217Z-scenarios）
+台架基线 commit: 570b631b4957ac261229b5b88f8eb12e7ea87178
+错误：另一台 test-takeover-rig.sh 正在跑（单跑锁 /tmp/rig-v016-takeover.lock 被占），本次拒绝并行起跑。
+  等它跑完再跑；若确认无台架在跑但锁仍被占，先查持锁进程再重跑。
+逐场景日志已归档：/home/hatch/workspace/dns-unlock-panel-v016r2-rig/audit/evidence-v016r2-fix/rig-20261121-2217Z-scenarios（0 个文件）
