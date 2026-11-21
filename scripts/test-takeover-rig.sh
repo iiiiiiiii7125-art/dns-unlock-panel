@@ -47,6 +47,13 @@
 #   沙箱 rig 只跑 stop marker、agent 状态、+tcp @127.0.0.53 对照等价断言；
 #   容器阶段由 scripts/rig/nspawn-v016-verify.sh 覆盖（V016-12 补验）。
 #
+# R2-14 跑前检查（2026-11-22）：起跑前先拿单跑锁（/tmp/rig-v016-takeover.lock，
+# 防并行 lane 同时跑）、清残留 agent（旧 $STATE/agent.pid + /proc 扫，必须在
+# rm -rf $RIG 之前做，否则 pid 文件一删、残留 agent 再也停不掉）、再查端口
+# （127.0.0.1:53、127.0.0.53:53、127.0.0.1:15353，另加面板端口）；任一端口仍
+# 被占就明确报错退出，绝不带占用硬跑。上轮复审第一遍 135+8 全在 S11，就是并行
+# lane 残留 agent 占 15353 的碰撞。
+#
 # 答案表（按场景顺序，一行一个提问，空行 = 默认 N）：
 #   S1b: 关 stub y / 接管 y / 摘要 y
 #   S2:  接管 y / 摘要 y
@@ -89,6 +96,70 @@ command -v unshare >/dev/null || { echo "需要 unshare"; exit 1; }
 command -v chroot >/dev/null || { echo "需要 chroot"; exit 1; }
 [ -x "$GO" ] || { echo "找不到 go：设 GO=/path/to/go（默认 ~/go/bin/go）"; exit 1; }
 
+# ---- R2-14 跑前检查：单跑锁 → 清残留 agent → 端口复查（任一端口被占都报错退出）----
+LOCK_FILE=/tmp/rig-v016-takeover.lock
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "错误：另一台 test-takeover-rig.sh 正在跑（单跑锁 $LOCK_FILE 被占），本次拒绝并行起跑。"
+  echo "  等它跑完再跑；若确认无台架在跑但锁仍被占，先查持锁进程再重跑。"
+  exit 1
+fi
+# 注意：fd 9 会被子进程继承；长命子进程（面板、unshare/chroot）启动时要加 9>&-
+# 关掉它，否则残留子进程会一直捏着锁，让下一跑误判“有台架在跑”。
+echo "台架单跑锁已持有：$LOCK_FILE"
+
+# 只杀确认为台架进程的 pid（防 pid 复用误杀）：cmdline 必须是 /root/rig/bin/ 下的
+# dnsunlock 或 bindhold，且进程根目录就是本次台架 rootfs。
+kill_rig_pid() { # $1=pid $2=说明
+  local pid="$1" label="$2" cmd root i
+  [ -n "$pid" ] && [ -d "/proc/$pid" ] || return 0
+  cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || return 0
+  case "$cmd" in /root/rig/bin/dnsunlock\ *|/root/rig/bin/bindhold\ *) ;; *)
+    echo "警告：$label 的 pid $pid 不是台架进程（$cmd），不动它"; return 0;;
+  esac
+  root=$(readlink "/proc/$pid/root" 2>/dev/null) || root=""
+  [ "$root" = "$ROOT" ] || { echo "警告：$label 的 pid $pid 根目录不是台架 rootfs（$root），不动它"; return 0; }
+  echo "清理残留台架进程：$label pid $pid（$cmd）"
+  kill "$pid" 2>/dev/null || true
+  i=0; while [ "$i" -lt 5 ] && [ -d "/proc/$pid" ]; do sleep 1; i=$((i+1)); done
+  if [ -d "/proc/$pid" ]; then kill -9 "$pid" 2>/dev/null || true; sleep 1; fi
+  [ -d "/proc/$pid" ] && echo "警告：pid $pid 仍在，端口检查会挡住本次起跑" || true
+}
+cleanup_stale_rig_processes() {
+  # 外层脚本重建目录会删 $STATE/agent.pid，跨跑残留 agent 若不先停就再也停不掉——
+  # 所以清残留必须在 rm -rf "$RIG" 之前做（这里），读旧 pid 文件 + /proc 扫两路。
+  # 单跑锁已持有，无其他台架在跑，扫到的都是残留。
+  local pid f d
+  for f in "$RIG/state/agent.pid" "$RIG/state/stub-holder.pid"; do
+    if [ -f "$f" ]; then pid=$(cat "$f" 2>/dev/null) || pid=""; kill_rig_pid "$pid" "$f"; fi
+  done
+  for d in /proc/[0-9]*; do
+    pid=${d#/proc/}
+    [ "$pid" = "$$" ] && continue
+    [ "$(readlink "/proc/$pid/root" 2>/dev/null)" = "$ROOT" ] || continue
+    case "$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)" in
+      /root/rig/bin/dnsunlock\ *|/root/rig/bin/bindhold\ *) kill_rig_pid "$pid" "/proc 扫到残留";;
+    esac
+  done
+}
+RIG_PORTS="127.0.0.1:53 127.0.0.53:53 127.0.0.1:15353"
+check_rig_ports_free() {
+  local busy=0 p
+  for p in $RIG_PORTS; do
+    if ss -tuln 2>/dev/null | grep -qF "$p "; then
+      echo "错误：台架端口 $p 起跑前已被占用，拒绝起跑（R2-14 跑前检查）。"
+      ss -tulnp 2>/dev/null | grep -F "$p " || true
+      echo "  可能原因：另一 lane 的残留 agent、并行跑台架，或外来进程占了该端口。"
+      echo "  处理：停掉上面列出的占用进程（或等另一 lane 跑完）后再跑；不要带占用硬跑，会跑出假结果。"
+      busy=1
+    fi
+  done
+  [ "$busy" = 0 ] || exit 1
+  echo "跑前端口检查通过：$RIG_PORTS 均空闲"
+}
+cleanup_stale_rig_processes
+check_rig_ports_free
+
 echo "== 构建 dnsunlock（amd64）=="
 "$GO" build -trimpath -o dist/dnsunlock-linux-amd64 ./cmd/dnsunlock
 (cd dist && sha256sum dnsunlock-linux-amd64 > dnsunlock-linux-amd64.sha256)
@@ -97,7 +168,14 @@ echo "== 起 panel（宿主 $PANEL_URL，上游 198.19.0.1）=="
 mkdir -p "$PANEL_DIR"
 printf '{"upstream":"198.19.0.1","rules":{},"server_rules":{}}' > "$PANEL_DATA"
 chmod 600 "$PANEL_DATA"
-./dist/dnsunlock-linux-amd64 panel -addr "127.0.0.1:$PANEL_PORT" -data "$PANEL_DATA" -dist "$PWD/dist" > "$PANEL_DIR/panel.log" 2>&1 &
+# R2-14：面板端口是起跑前挑的空闲端口，起 panel 前再复查一次（防挑完又被占）。
+if ss -tln 2>/dev/null | grep -qF "127.0.0.1:$PANEL_PORT "; then
+  echo "错误：面板端口 $PANEL_PORT 在挑完后又被占了，拒绝起跑（R2-14 跑前检查）。"
+  ss -tlnp 2>/dev/null | grep -F "127.0.0.1:$PANEL_PORT " || true
+  exit 1
+fi
+# 9>&-：关掉单跑锁 fd，别让后台面板捏着锁（否则残留面板会挡住下一跑）。
+./dist/dnsunlock-linux-amd64 panel -addr "127.0.0.1:$PANEL_PORT" -data "$PANEL_DATA" -dist "$PWD/dist" > "$PANEL_DIR/panel.log" 2>&1 9>&- &
 PANEL_PID=$!
 i=0
 while [ "$i" -lt 15 ]; do
@@ -171,7 +249,8 @@ export RIG_CONTAINER_STAGE="${RIG_CONTAINER_STAGE:-0}"  # V016-15：容器里跑
 set +e
 # proc 挂进 chroot：ss 才能看见真监听（install.sh 的 stub_only_conflict
 # 和台架的 ss 断言都靠它；plain --mount 下挂 proc 实测可行，--pid 下才禁）。
-unshare --mount bash -c 'mount --make-rprivate /; mount -t proc proc /var/lib/machines/v016-test/proc; mount -t devpts devpts /var/lib/machines/v016-test/dev/pts; mount --bind /dev/tty /var/lib/machines/v016-test/dev/tty; mount --bind /dev/null /var/lib/machines/v016-test/dev/null; mount --bind /dev/zero /var/lib/machines/v016-test/dev/zero; mount --bind /dev/urandom /var/lib/machines/v016-test/dev/urandom; exec chroot /var/lib/machines/v016-test /usr/bin/script -qec "/bin/bash /root/rig/rig-inner.sh" /root/rig/logs/typescript' < /tmp/rig-answers.txt
+unshare --mount bash -c 'mount --make-rprivate /; mount -t proc proc /var/lib/machines/v016-test/proc; mount -t devpts devpts /var/lib/machines/v016-test/dev/pts; mount --bind /dev/tty /var/lib/machines/v016-test/dev/tty; mount --bind /dev/null /var/lib/machines/v016-test/dev/null; mount --bind /dev/zero /var/lib/machines/v016-test/dev/zero; mount --bind /dev/urandom /var/lib/machines/v016-test/dev/urandom; exec chroot /var/lib/machines/v016-test /usr/bin/script -qec "/bin/bash /root/rig/rig-inner.sh" /root/rig/logs/typescript' < /tmp/rig-answers.txt 9>&-
+# 9>&-：关掉单跑锁 fd，别让 chroot 里的 agent 捏着锁（否则残留 agent 会挡住下一跑）。
 RC=$?
 set -e
 echo "== 台架退出码: $RC（日志：chroot 内 /root/rig/logs/，宿主路径 $RIG/logs/；panel 日志 $PANEL_DIR/panel.log）=="
