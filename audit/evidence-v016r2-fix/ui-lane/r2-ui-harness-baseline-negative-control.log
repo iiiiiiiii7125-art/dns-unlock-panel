@@ -1,0 +1,35 @@
+=== baseline 7b86d49, harness r206 ===
+== R2-06 copyServerInstall ==
+Error: reveal 失败：网络错误
+    at fetch (/tmp/negcheck/audit/evidence-v016r2-fix/ui-lane/r2-ui-harness.js:62:32)
+    at api (evalmachine.<anonymous>:8:17)
+    at Object.copyServerInstall (evalmachine.<anonymous>:553:17)
+    at testR206 (/tmp/negcheck/audit/evidence-v016r2-fix/ui-lane/r2-ui-harness.js:85:13)
+    at async /tmp/negcheck/audit/evidence-v016r2-fix/ui-lane/r2-ui-harness.js:190:42
+EXIT=2
+
+=== baseline 7b86d49, harness r211 ===
+== R2-11 node install header has no masked IP ==
+  FAIL 11 header has no masked IP :: # 在「HK-01（203.0.*.*，HK）」这台机器上执行：装 SNI 解锁代理；执行时会问 agent token，填任意一台已登记 DNS 服务器的 token。
+curl -fsSL http://127.0.0.1:18080/install.sh | DNS_SNI_ALLOWLIST='203.0.113.7' bash -s -- --unlock-node
+  PASS 11 header still names the node
+  PASS 11 header still carries the region
+  PASS 11 header still says which machine to run on
+  PASS 11 row commands still differ per node
+  PASS 11 row B command names JP-01
+  PASS 11 allowlist IP (from server reveal) is unaffected
+  PASS 11 renderNodes passes node id per row
+
+7 passed, 1 failed
+EXIT=1
+
+=== baseline 7b86d49, harness r216 ===
+== R2-16 empty-IP servers are named, not silently skipped ==
+  PASS 16i partial empty: command copied with surviving IP
+  FAIL 16i partial empty: alert names the empty-IP server :: ["已复制「HK-01」的安装命令，到这台机器粘贴执行。执行时会问 agent token：填任意一台已登记 DNS 服务器的 token（「DNS 服务器」页可查看）。"]
+  PASS 16ii all empty: command copied without allowlist
+  FAIL 16ii all empty: alert names both empty-IP servers :: ["已复制「HK-01」的安装命令，到这台机器粘贴执行。执行时会问 agent token：填任意一台已登记 DNS 服务器的 token（「DNS 服务器」页可查看）。（allowlist 未填：已登记的服务器没有可用的 IP，安装时按提示输入 DNS 服务器 IP。）"]
+  PASS 16ii all empty: alert still explains allowlist is missing
+
+3 passed, 2 failed
+EXIT=1
