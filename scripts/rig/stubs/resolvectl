@@ -1,0 +1,5 @@
+#!/bin/bash
+# resolvectl stub（台架用）：只记录调用；dns 子命令记 marker（供 --temp 断言）。
+echo "$(date '+%H:%M:%S') resolvectl $*" >> /root/rig/logs/calls.log
+if [ "$1" = "dns" ]; then echo "resolvectl dns $2 $3" >> /root/rig/logs/markers.log; fi
+exit 0

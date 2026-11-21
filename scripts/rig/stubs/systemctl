@@ -1,0 +1,61 @@
+#!/bin/bash
+# systemctl stub（台架用）：记录每次调用，模拟最小状态。
+# 状态文件：/root/rig/state/<unit>.<active|enabled>，内容 yes/no。
+LOG=/root/rig/logs/calls.log
+STATE=/root/rig/state
+echo "$(date '+%H:%M:%S') systemctl $*" >> "$LOG"
+unit_state() { # $1=unit $2=field
+  [ -f "$STATE/$1.$2" ] && cat "$STATE/$1.$2" || echo ""
+}
+kill_stub_holder() {
+  # 模拟 resolved 停掉 stub：干掉占着 127.0.0.53:53 的 bindhold（按 PID 文件，不用模式匹配）
+  if [ -f "$STATE/stub-holder.pid" ]; then
+    kill "$(cat "$STATE/stub-holder.pid")" 2>/dev/null || true
+    rm -f "$STATE/stub-holder.pid"
+  fi
+}
+case "$1" in
+  is-active)
+    shift; [ "$1" = "--quiet" ] && shift
+    [ "$(unit_state "$1" active)" = "yes" ] && exit 0 || exit 3
+    ;;
+  is-enabled)
+    shift; [ "$1" = "--quiet" ] && shift
+    [ "$(unit_state "$1" enabled)" = "yes" ] && exit 0 || exit 1
+    ;;
+  restart)
+    # restart <unit>；resolved 重启时 stub 监听随之释放
+    [ "$2" = "systemd-resolved" ] && kill_stub_holder
+    echo "restart $2" >> /root/rig/logs/markers.log
+    exit 0
+    ;;
+  reload)
+    echo "reload $2" >> /root/rig/logs/markers.log
+    exit 0
+    ;;
+  disable)
+    u="${*: -1}"
+    [ "$u" = "systemd-resolved" ] && kill_stub_holder
+    echo "no" > "$STATE/$u.active"; echo "no" > "$STATE/$u.enabled"
+    echo "disable $u" >> /root/rig/logs/markers.log
+    exit 0
+    ;;
+  enable)
+    u="${*: -1}"
+    echo "yes" > "$STATE/$u.active"; echo "yes" > "$STATE/$u.enabled"
+    echo "enable $u" >> /root/rig/logs/markers.log
+    if [ "$u" = "dnsunlock-agent" ]; then
+      # 模拟 systemd 启动 agent：按 install.sh 刚写的配置起真 agent
+      /root/rig/stubs/start-agent
+    fi
+    exit 0
+    ;;
+  daemon-reload) exit 0;;
+  status)
+    echo "stub: ${2:-} active (running)"; exit 0;;
+  cat)
+    case "$2" in systemd-resolved.service|NetworkManager.service) exit 0;; *) exit 1;; esac
+    ;;
+  list-unit-files) exit 0;;
+  *) exit 0;;
+esac

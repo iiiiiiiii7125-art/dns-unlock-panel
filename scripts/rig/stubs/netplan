@@ -1,0 +1,4 @@
+#!/bin/bash
+# netplan stub（台架用）：只记录调用。rootfs 里没有真 netplan。
+echo "$(date '+%H:%M:%S') netplan $*" >> /root/rig/logs/calls.log
+exit 0
