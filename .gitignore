@@ -2,3 +2,5 @@ data/panel.json
 data/panel.json.bak
 dist/
 *.log
+__pycache__/
+*.pyc
