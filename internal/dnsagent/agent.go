@@ -1186,18 +1186,29 @@ func newUDPPktinfo(c *net.UDPConn, addr *net.UDPAddr) *udpPktinfo {
 		return p
 	}
 	var setErr error
-	_ = raw.Control(func(fd uintptr) {
-		setErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, syscall.IPV6_RECVPKTINFO, 1)
-	})
+	// trySet applies one pktinfo option; a Control error means the
+	// callback never ran, so setErr staying nil must NOT read as
+	// success (V016-26: a closed socket used to come out active=true).
+	trySet := func(level, typ int) (ctrlErr error) {
+		setErr = nil
+		return raw.Control(func(fd uintptr) {
+			setErr = syscall.SetsockoptInt(int(fd), level, typ, 1)
+		})
+	}
+	if ctrlErr := trySet(syscall.IPPROTO_IPV6, syscall.IPV6_RECVPKTINFO); ctrlErr != nil {
+		log.Printf("dns-agent: cannot enable pktinfo: cannot access socket (%v); replies to 127.0.0.53 may be dropped on source check", ctrlErr)
+		return p
+	}
 	if setErr == nil {
 		p.v6 = true
 		p.active = true
 		return p
 	}
 	v6Err := setErr
-	_ = raw.Control(func(fd uintptr) {
-		setErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_PKTINFO, 1)
-	})
+	if ctrlErr := trySet(syscall.IPPROTO_IP, syscall.IP_PKTINFO); ctrlErr != nil {
+		log.Printf("dns-agent: cannot enable pktinfo: cannot access socket (%v); replies to 127.0.0.53 may be dropped on source check", ctrlErr)
+		return p
+	}
 	if setErr == nil {
 		log.Printf("dns-agent: IPV6_RECVPKTINFO not supported on this socket (%v); using IP_PKTINFO instead", v6Err)
 		p.v6 = false
