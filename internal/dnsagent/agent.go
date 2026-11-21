@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -185,7 +186,9 @@ func New(cfg Config) *Agent {
 	// resolver into an open one.
 	a.allowlistErr = ValidateAllowlist(cfg.Allowlist)
 	if len(a.allowNets) == 0 && len(a.allowIPs) == 0 {
-		fmt.Println("[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.")
+		// Stderr, not stdout: stdout is machine-readable output for
+		// `dnsunlock check` (and nothing here is a query answer).
+		fmt.Fprintln(os.Stderr, "[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.")
 	}
 	return a
 }
@@ -323,7 +326,8 @@ func (a *Agent) panelDo(newReq func(base string) (*http.Request, error)) (*http.
 	return nil, lastErr
 }
 
-func (a *Agent) fetchConfig() error {
+func (a *Agent) fetchAgentConfig() (model.AgentConfig, error) {
+	var cfg model.AgentConfig
 	// Token goes in the header, never in the URL (URLs land in access
 	// logs). The panel's agentAuth accepts X-Agent-Token (P0-06).
 	resp, err := a.panelDo(func(base string) (*http.Request, error) {
@@ -337,15 +341,22 @@ func (a *Agent) fetchConfig() error {
 		return req, nil
 	})
 	if err != nil {
-		return err
+		return cfg, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("panel config: %s: %s", resp.Status, strings.TrimSpace(string(b)))
+		return cfg, fmt.Errorf("panel config: %s: %s", resp.Status, strings.TrimSpace(string(b)))
 	}
-	var cfg model.AgentConfig
 	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func (a *Agent) fetchConfig() error {
+	cfg, err := a.fetchAgentConfig()
+	if err != nil {
 		return err
 	}
 	a.lastFetchMu.Lock()
