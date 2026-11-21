@@ -62,18 +62,51 @@ ask() {
 has_tty() { { : < /dev/tty; } 2>/dev/null; }
 # 计时不用 date +%s%N（Alpine/busybox 上不可靠，见审计 P3-06）：有 python3 就用它计时，
 # 没有就只按通/不通排序，不编造毫秒数。
+# v0.1.6 V016-04：并行测全部候选 IP（每个 /dev/tcp :443 探测放后台跑，
+# 各 3 秒超时），按延迟排序，选最快且可达的；只影响选默认解锁 IP，
+# 不改变 agent 的规则/分流行为。stdout 末行仍是选中的 IP（调用方取 tail -1）。
 pick_fastest_ip() {
   local best="" ip
   IFS=',' read -ra IPS <<< "$1"
-  for ip in "${IPS[@]}"; do
-    ip="$(echo "$ip" | tr -d ' ')"
+  local tmpdir idx _st _ms _ip
+  tmpdir="$(mktemp -d /tmp/dnsunlock-speed.XXXXXX)"
+  for idx in "${!IPS[@]}"; do
+    ip="$(echo "${IPS[$idx]}" | tr -d ' ')"
     [ -z "$ip" ] && continue
-    if timeout 3 bash -c "echo > /dev/tcp/$ip/443" 2>/dev/null; then
-      echo "  测速 $ip :443 -> 通"
-      [ -z "$best" ] && best="$ip"
-    else
-      echo "  测速 $ip :443 -> 不通"
-    fi
+    (
+      _start="$(python3 -c 'import time;print(time.time())' 2>/dev/null || echo "")"
+      if timeout 3 bash -c "echo > /dev/tcp/$ip/443" 2>/dev/null; then _st="ok"; else _st="fail"; fi
+      _end="$(python3 -c 'import time;print(time.time())' 2>/dev/null || echo "")"
+      if [ -n "$_start" ] && [ -n "$_end" ]; then
+        _ms="$(awk -v a="$_start" -v b="$_end" 'BEGIN{printf "%.0f", (b-a)*1000}')"
+      else
+        _ms="-1"
+      fi
+      printf '%s %s %s\n' "$_st" "$_ms" "$ip" > "$tmpdir/$idx"
+    ) &
+  done
+  wait || true
+  local timed=() untimed=() failed=()
+  for idx in "${!IPS[@]}"; do
+    [ -f "$tmpdir/$idx" ] || continue
+    read -r _st _ms _ip < "$tmpdir/$idx"
+    if [ "$_st" = "ok" ] && [ "$_ms" != "-1" ]; then timed+=("$_ms"$'\t'"$_ip");
+    elif [ "$_st" = "ok" ]; then untimed+=("$_ip");
+    else failed+=("$_ip"); fi
+  done
+  rm -rf "$tmpdir"
+  if [ "${#timed[@]}" -gt 0 ]; then
+    while IFS=$'\t' read -r _ms _ip; do
+      echo "  测速 $_ip :443 -> 通（${_ms} ms）"
+      [ -z "$best" ] && best="$_ip"
+    done < <(printf '%s\n' "${timed[@]}" | sort -n)
+  fi
+  for _ip in "${untimed[@]}"; do
+    echo "  测速 $_ip :443 -> 通"
+    [ -z "$best" ] && best="$_ip"
+  done
+  for _ip in "${failed[@]}"; do
+    echo "  测速 $_ip :443 -> 不通"
   done
   echo "$best"
 }
@@ -234,7 +267,8 @@ ask_yes_no() {
 # 优先 getent hosts（走 glibc，遵守 resolv.conf 的 options use-vc），
 # 缺 getent 回退不带 @server 的 dig（use-vc 时加 +tcp）。
 # 返回 0=解析成功，1=解析失败，2=没工具（只警告，不 abort）。
-# 注意：缺 dig 只在这里可降级；测速环节缺 dig 仍是致命的（两处不要混淆）。
+# 注意：测速环节（pick_fastest_ip 用 /dev/tcp，probe_panel 用 curl）
+# 本来就不用 dig；缺 dig 只影响这里和 [4/6] 的验证，且只警告、不致命。
 verify_system_dns() {
   local domain="$1" out=""
   if command -v getent >/dev/null 2>&1; then
@@ -483,12 +517,13 @@ apply_temp_dns() {
   verify_system_dns example.com || echo "警告: 临时模式接管后系统解析验证未通过（见上），请检查 agent 是否在跑；还原办法见上。" >&2
 }
 
-# v0.1.3 容错：面板 443 被挡时不要硬等 134 秒。候选顺序：
+# v0.1.3 容错：面板 443 被挡时不要硬等 134 秒。候选入口：
 # (a) 配置的 PANEL_URL 本身，(b) 同一主机 http :8080（面板本身一直监听
 # :8080，443 只是 Caddy 的反代），(c) 同一主机解析出的 IP :8080。
-# 每个候选只探一次（--max-time 8）；任何 HTTP 响应都算通（没 token 的
-# whoami 回 401 也算，说明到面板了）。成功时 stdout 只输出选中的地址，
-# 诊断打到 stderr。都不通返回 1。
+# v0.1.6 V016-04：全部候选并行探测（curl 计时，--max-time 8），按延迟
+# 排序选最快且可达的，不再是“第一个通的就赢”。任何 HTTP 响应都算通
+# （没 token 的 whoami 回 401 也算，说明到面板了）。成功时 stdout 只
+# 输出选中的地址，诊断打到 stderr。都不通返回 1。
 probe_panel() {
   local base="$1" scheme rest hostport host port ip
   local cands=() uniq=() cand code u seen
@@ -524,17 +559,45 @@ probe_panel() {
     for u in "${uniq[@]}"; do [ "$u" = "$cand" ] && seen=1; done
     [ "$seen" = 0 ] && uniq+=("$cand")
   done
+  # v0.1.6 V016-04：并行测全部候选入口（curl 计时，8 秒超时），按延迟
+  # 排序选最快且可达的做 PANEL_BASE，并打印排名；测速只影响选入口，
+  # 不改变 agent 的规则/分流行为。成功时 stdout 只输出选中的地址，
+  # 诊断打到 stderr。都不通返回 1。
+  local tmpdir
+  tmpdir="$(mktemp -d /tmp/dnsunlock-probe.XXXXXX)"
+  local i=0
   for cand in "${uniq[@]}"; do
-    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 "$cand/api/v1/agent/whoami" 2>/dev/null || true)
-    if [ -n "$code" ] && [ "$code" != "000" ]; then
-      echo "$cand"
-      return 0
-    fi
-    echo "  探测 $cand -> 不通（HTTP ${code:-000}）" >&2
+    ( out="$(curl -s -o /dev/null -w "%{http_code} %{time_total}" --max-time 8 "$cand/api/v1/agent/whoami" 2>/dev/null)" && printf '%s\n' "$out" > "$tmpdir/$i" || echo "000 0" > "$tmpdir/$i" ) &
+    i=$((i+1))
   done
-  echo "面板都连不上，试过：${uniq[*]}" >&2
-  echo "请检查面板是否在运行；如果 443 被挡，可用 --panel 指定面板机的内网地址，如：bash install.sh --panel http://<面板机内网IP>:8080；面板和 agent 在同一台机器上时可用 --panel http://127.0.0.1:8080" >&2
-  return 1
+  wait || true
+  local results=() ms code tsec
+  i=0
+  for cand in "${uniq[@]}"; do
+    if read -r code tsec < "$tmpdir/$i" 2>/dev/null && [ -n "$code" ] && [ "$code" != "000" ]; then
+      ms="$(awk -v t="$tsec" 'BEGIN{printf "%.0f", t*1000}')"
+      results+=("$ms"$'\t'"$cand"$'\t'"$code")
+    else
+      echo "  探测 $cand -> 不通（HTTP ${code:-000}）" >&2
+    fi
+    i=$((i+1))
+  done
+  if [ "${#results[@]}" -eq 0 ]; then
+    rm -rf "$tmpdir"
+    echo "面板都连不上，试过：${uniq[*]}" >&2
+    echo "请检查面板是否在运行；如果 443 被挡，可用 --panel 指定面板机的内网地址，如：bash install.sh --panel http://<面板机内网IP>:8080；面板和 agent 在同一台机器上时可用 --panel http://127.0.0.1:8080" >&2
+    return 1
+  fi
+  local ranked best
+  ranked="$(printf '%s\n' "${results[@]}" | sort -n)"
+  echo "  面板入口测速排名（并行探测，8 秒超时，最快在前）：" >&2
+  echo "$ranked" | while IFS=$'\t' read -r ms cand code; do
+    echo "    $cand -> HTTP $code，${ms} ms" >&2
+  done
+  best="$(echo "$ranked" | head -1 | cut -f2)"
+  rm -rf "$tmpdir"
+  echo "$best"
+  return 0
 }
 
 # v0.1.6 item 6：validate_ipv4（照抄 AKDNS：正则 + 每段 ≤255）。
@@ -821,7 +884,6 @@ if command -v dig >/dev/null 2>&1; then
 else
   # v0.1.6 item 2：缺 dig 不再 exit 1——区分“测不了”和“测了不通”。
   # 测不了只警告 + 继续安装（接管步必须能跑到）；dig 在但解析无结果仍是硬失败（见上）。
-  # 注意：测速环节缺 dig 仍是致命的（见 pick_fastest_ip / run_speed_test 的约定），只在应用后验证环节可降级。
   echo "  警告: 未装 dig，无法自动验证解析，继续安装（agent 本身不受影响）。"
   echo "  请手动验证：dig @$_dl_host -p $_dl_port example.com A（装 dig：Debian/Ubuntu 用 apt-get install -y dnsutils，RHEL/CentOS 用 yum install -y bind-utils）"
   echo "  也可不用 dig：getent hosts example.com（走系统解析器；接管后才有效）"
