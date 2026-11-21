@@ -1,0 +1,20 @@
+可用的备份（时间倒序）：
+  [1] 2026-11-21T11:37:10+0000  pre-takeover  DNS: 1.1.1.1 1.0.0.1   /var/lib/dnsunlock/backup/20261121-113710_pre-takeover
+  [2] 2026-11-21T11:35:45+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-113545_pre-takeover
+  [3] 2026-11-21T11:35:45+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-113545_pre-restore
+  [4] 2026-11-21T11:35:11+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-113511_pre-restore
+  [5] 2026-11-21T11:34:30+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-113430_pre-takeover
+  [6] 2026-11-21T11:33:22+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-113322_pre-restore
+  [7] 2026-11-21T11:33:21+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-113321_pre-takeover
+  [8] 2026-11-21T11:32:48+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-113248_pre-takeover
+非交互模式：默认还原最早的一份（原始状态）: /var/lib/dnsunlock/backup/20261121-113248_pre-takeover
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261121-113711_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-113711_pre-restore
+从备份还原: /var/lib/dnsunlock/backup/20261121-113248_pre-takeover（pre-takeover，2026-11-21T11:32:48+0000）
+还原前 agent 在运行（监听 :53），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）...
+跳过 NM 重载（备份时未在跑或无 nmcli）
+跳过 resolvconf 重载（备份时未在跑）
+已还原 /etc/resolv.conf <- /var/lib/dnsunlock/backup/20261121-113248_pre-takeover/resolv.conf
+已还原并验证通过（getent hosts example.com 有结果）
+agent 还原前在运行（监听 :53），现保持停止：systemd-resolved 已重新占用 :53（stub 127.0.0.53），agent 的通配符 :53 无法同时绑定。
+如需继续用 agent 分流，请重新执行安装脚本（它会重新关掉 stub 并接管）；只想恢复系统 DNS 的话，现在已经好了。

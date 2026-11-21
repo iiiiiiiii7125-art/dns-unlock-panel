@@ -1,0 +1,107 @@
+# V016-12 nspawn 真容器验证 —— 第一遍：SMOKE BOOT 失败，5 步补验未执行
+
+- 时间：2026-11-21 12:42–12:44 UTC（20:42–20:44 CST）
+- 执行人：nspawn 真容器验证员（subagent）
+- 工作树：~/workspace/dns-unlock-panel-fix-rig，HEAD ebe0ace
+  （产品代码与 374e7b7 一致：`git diff 374e7b7 HEAD -- scripts cmd internal pkg`
+  只动了 rig 脚本 + 审计证据，未动 install.sh / restore-resolv.sh /
+  cmd / internal / pkg；镜像内 install.sh 与 restore-resolv.sh 的 md5
+  与工作树一致：470b2559… / 45067ed2…）
+- 验证脚本：scripts/rig/nspawn-v016-verify.sh（已全文通读，未执行；
+  其审批门 NSPAWN_VERIFY_APPROVED=1 已由用户放行，但 smoke 先失败，
+  故脚本本体一次未跑）
+
+## 结论（先说）
+
+本沙箱无法启动 nspawn 容器，V016-12 的 5 步补验（127.0.0.1:53 /
+127.0.0.1:5353 / 负向 127.0.0.53:53 指定地址恢复分支）在第一遍
+**一次未跑，无通过/失败可报**。这是环境阻断，不是产品代码的
+通过或失败。按任务指令立即停下，未做任何绕过、未改镜像网络配置。
+
+## 失败点（确定性复现，两次同一错误）
+
+```
+Spawning container v016-nspawn on /var/lib/machines/v016-nspawn.
+Press Ctrl-] three times within 1s to kill container.
+Failed to mount sysfs (type sysfs) on /var/lib/machines/v016-nspawn/sys (MS_RDONLY|MS_NOSUID|MS_NODEV|MS_NOEXEC ""): Operation not permitted
+```
+
+- 第 1 次：smoke 脚本 /tmp/nspawn-smoke.sh 起容器，90 秒等待后
+  machinectl 无该机器，nspawn 实际在启动瞬间即已失败退出。
+- 第 2 次：直接复跑 `timeout 25 systemd-nspawn --boot
+  --machine=v016-nspawn --directory=/var/lib/machines/v016-nspawn`，
+  立即同一错误，退出码 1。确定性失败，非偶发超时。
+
+## 根因（宿主沙箱限制，与镜像/脚本无关）
+
+宿主 /sys 是只读 tmpfs（ro,nosuid,nodev,noexec,mode=555，
+uid=131072,gid=131072），仅子目录以只读 sysfs 绑定挂载：
+
+```
+tmpfs on /sys type tmpfs (ro,nosuid,nodev,noexec,relatime,size=4096k,nr_inodes=1024,mode=555,uid=131072,gid=131072,inode64)
+sysfs on /sys/block type sysfs (ro,nosuid,nodev,noexec,relatime)
+sysfs on /sys/bus   type sysfs (ro,nosuid,nodev,noexec,relatime)
+...
+```
+
+即本沙箱是 fake /sys tmpfs + userns 环境，容器起 systemd 前挂载
+sysfs 即被 EPERM 拒绝。`unprivileged_userns_clone=1`，
+`max_user_namespaces=2147483647`（userns 本身可建），但 sysfs
+挂载不被允许。镜像内 systemd-networkd 已确认 mask（-> /dev/null），
+与本次失败无关。
+
+## 跑前核查（均通过，失败不在准备环节）
+
+- 镜像 /var/lib/machines/v016-nspawn 存在（Ubuntu 24.04 + systemd +
+  resolved + dig）；镜像内 /root/v016/case.env 存在（3 行；
+  PANEL_URL 长度 22 = http://127.0.0.1:18280，RIG_SERVER_ID 长度 23，
+  与面板数据一致；token 本身未打印、未记入任何日志）。
+- 宿主面板数据 /tmp/nspawn-panel/panel.json 存在：服务器 nspawn-dns、
+  节点 nspawn-jp 203.0.113.99、tiktok 规则；面板未启动（:18280 无监听）。
+- 宿主 :53 / :18280 无任何监听进程；早先 Go 线报告的遗留 dns-agent
+  进程已不在（ps 无 dnsunlock 进程），无需停任何进程。
+- systemd-nspawn / machinectl 存在（systemd 255）；go 为 ~/go/bin/go 1.25.1。
+- 宿主 systemd 在 running；但 machinectl 起初连不上 bus：
+  /run/dbus 下无 system_bus_socket，systemd-machined 为 inactive。
+  为使 machinectl 可用，启动了宿主 dbus.socket/dbus.service/
+  systemd-machined.service（之后 machinectl list 正常，显示 No machines）。
+  验证结束后已停掉这三者，恢复跑前状态。
+- 宿主 /etc/resolv.conf 跑前跑后 sha256 一致：
+  42d6e995cee3d0aa6364ed3cc9e83c4737d623ac8d66322cda89ae134855df70
+  （spawnd 管理、只读绑定挂载，本次未碰）。
+
+## 未做的事（明确记录）
+
+- 未执行 nspawn-v016-verify.sh 本体（容器未起来，无从执行）。
+- 未碰生产面板 https://dns.0v0.baby，未碰测试机。
+- 未启动宿主面板（18280），未动 /tmp/nspawn-panel/panel.json。
+- 未轮换/删除 token 与测试服务器：脚本末尾的 DELETE
+  /api/v1/servers/<id> 一步未执行——第一遍既定跳过轮换的决定
+  因环境失败而自然成立，token 与服务器 nspawn-dns 原样保留。
+- 未改镜像任何文件（install.sh / restore-resolv.sh 仅 md5 对账，
+  未覆写；容器内脚本 nspawn-guest-check.sh 未写入镜像）。
+- 未对 Shell 线正在跑的 /tmp/v016-shell harness 做任何干预。
+
+## 对第二遍的影响与前置条件
+
+- 第二遍无需重新登记服务器/节点/规则：token、服务器、面板数据
+  全部原样保留，第一遍未消耗任何东西。
+- 第二遍不能在本沙箱重跑同一命令——除非沙箱的 /sys 挂载限制解除。
+  可行去处：测试机（镜像需先传过去；测试机 /root/v016/ 与
+  /var/lib/machines/ 目前均为空），或任何能正常挂载 sysfs 的宿主。
+- 在新宿主上跑之前需确认：systemd-nspawn + machinectl 可用、
+  D-Bus + systemd-machined 在跑（否则 machinectl 连不上 bus，
+  本次是手动 systemctl start 补起的）、镜像内 networkd 保持 mask、
+  宿主面板数据与镜像内 case.env 随镜像一起迁移且 PANEL_URL 一致。
+- 脚本本身的轮换处理仍按原计划：第二遍（最终遍）跑完后再执行
+  末尾 DELETE 测试服务器轮换 token；第一遍的跳过决定不变。
+
+## 原始 smoke 日志（/tmp/nspawn-smoke-boot.log 全文）
+
+```
+== smoke boot 2026-11-21T12:42:51+00:00 ==
+nspawn pid 94166
+SMOKE RESULT: container did NOT come up in 90s
+```
+
+（nspawn 输出全文见上文“失败点”；该日志不含任何 token。）

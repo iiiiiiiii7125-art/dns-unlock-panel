@@ -43,6 +43,9 @@
 #   resolved 不覆写静态 resolv.conf）、真 chattr +i 锁、真 NM 守护进程行为、
 #   真 netplan apply、真 resolvconf -u。汇报里分两栏写，不要把台架结果
 #   说成 systemd 容器结果。
+#   另：dig @127.0.0.53（UDP）回包源断言是容器阶段的（见 rig-inner.sh 头），
+#   沙箱 rig 只跑 stop marker、agent 状态、+tcp @127.0.0.53 对照等价断言；
+#   容器阶段由 scripts/rig/nspawn-v016-verify.sh 覆盖（V016-12 补验）。
 #
 # 答案表（按场景顺序，一行一个提问，空行 = 默认 N）：
 #   S1b: 关 stub y / 接管 y / 摘要 y
@@ -164,6 +167,7 @@ touch "$D/tty" "$D/null" "$D/zero" "$D/urandom" 2>/dev/null || true
 : > "$D/null" 2>/dev/null || true  # 之前 /dev/null 是个普通文件，先截断
 echo "== 进 chroot 跑台架（script 分配 pty 供 /dev/tty 提问）=="
 export DNS_AGENT_TOKEN="$TOKEN" RIG_SERVER_ID="$SERVER_ID" PANEL_URL="$PANEL_URL"
+export RIG_CONTAINER_STAGE="${RIG_CONTAINER_STAGE:-0}"  # V016-15：容器里跑才置 1，见 rig-inner.sh 头
 set +e
 # proc 挂进 chroot：ss 才能看见真监听（install.sh 的 stub_only_conflict
 # 和台架的 ss 断言都靠它；plain --mount 下挂 proc 实测可行，--pid 下才禁）。
