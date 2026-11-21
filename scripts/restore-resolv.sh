@@ -426,28 +426,91 @@ record_and_stop_agent() {
   return 0
 }
 
-# 还原后按需恢复 agent（状态写死，不含糊）。
-# agent 监听 :53（通配符）时起不回来：systemd-resolved 已重新占住
-# 127.0.0.53:53，通配符 :53 绑不上（EADDRINUSE）。这时保持停止并明说，
-# 要再用 agent 分流就重跑安装脚本（安装时会重新关掉 stub 并接管）。
+# measure_53：实测 :53 的占用情况，供 restore_agent_after 决策（V016-08）。
+# 输出以下之一（第一行）：
+#   stub <地址>   — resolved 的 stub（127.0.0.53:53 或 127.0.0.54:53）在监听
+#   held <地址…> — :53 被占，但不是 stub（列出监听地址；无 ss 时只给 held）
+#   free          — :53 上没有任何监听
+#   unknown       — 无 ss 且无 python3，无法测量
+measure_53() {
+  if command -v ss >/dev/null 2>&1; then
+    local addrs=""
+    addrs=$(ss_listen_53_p 2>/dev/null | cut -f1 | sort -u | tr '\n' ' ' | sed 's/ $//')
+    if [ -z "$addrs" ]; then echo "free"; return 0; fi
+    case " $addrs " in
+      *" 127.0.0.53:53 "*) echo "stub 127.0.0.53:53"; return 0;;
+      *" 127.0.0.54:53 "*) echo "stub 127.0.0.54:53"; return 0;;
+    esac
+    echo "held $addrs"; return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - <<'PYEOF' 2>/dev/null
+import socket, errno
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    s.bind(("0.0.0.0", 53))
+    print("free")
+except OSError as e:
+    print("held" if e.errno == errno.EADDRINUSE else "unknown")
+finally:
+    s.close()
+PYEOF
+    return 0
+  fi
+  echo "unknown"
+}
+
+# 还原后按需恢复 agent（实测为准，不瞎猜，V016-08）。
+# agent 监听通配符 :53 时：先实测 :53 的占用——resolved 的 stub 真在
+# 127.0.0.53:53 上监听才说“已重新占用”并保持停止；:53 空闲就把 agent
+# 起回来（不然分流无声无息丢了）；被别的服务占着就如实说是谁占着。
 # 监听是具体地址（127.0.0.1:53、127.0.0.1:5353 等）时不冲突，直接起回来。
+# 无 unit 的 agent 也走 restart_agent 的端口兜底分支（V016-09）。
 restore_agent_after() {
-  agent_unit_exists || return 0
   if [ "$AGENT_WAS_ACTIVE" != 1 ]; then
     echo "agent 还原前未在运行，保持停止（未改动）。"
     return 0
   fi
   case "$AGENT_LISTEN" in
     :53|0.0.0.0:53|[::]:53)
-      echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：systemd-resolved 已重新占用 :53（stub 127.0.0.53），agent 的通配符 :53 无法同时绑定。"
-      echo "如需继续用 agent 分流，请重新执行安装脚本（它会重新关掉 stub 并接管）；只想恢复系统 DNS 的话，现在已经好了。"
+      local _m="" _kind="" _rest=""
+      _m=$(measure_53 2>/dev/null || echo unknown)
+      _kind="${_m%% *}"
+      case "$_m" in *" "*) _rest="${_m#* }";; *) _rest="";; esac
+      case "$_kind" in
+        stub)
+          echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：实测 systemd-resolved 的 stub 已在 $_rest 监听，agent 的通配符 :53 无法同时绑定。"
+          echo "如需继续用 agent 分流，请重新执行安装脚本（它会重新关掉 stub 并接管）；只想恢复系统 DNS 的话，现在已经好了。"
+          clear_pending_marker
+          ;;
+        free)
+          echo "agent 还原前在运行（监听 $AGENT_LISTEN），但实测 :53 当前空闲（systemd-resolved 的 stub 并未在监听），正在把 agent 恢复运行..."
+          if restart_agent; then
+            echo "agent 已恢复运行（监听 $AGENT_LISTEN）。"
+          else
+            echo "警告: agent 恢复启动失败（监听 $AGENT_LISTEN），分流已停止；系统 DNS 不受影响。请手动 systemctl start dnsunlock-agent，或重跑安装脚本。" >&2
+            write_pending_marker "$AGENT_LISTEN"
+          fi
+          ;;
+        held)
+          echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：systemd-resolved 的 stub 未在 :53 上监听，但 :53 仍被占（${_rest:-别的服务}），agent 的通配符 :53 无法绑定。"
+          echo "如需继续用 agent 分流，请先处理占 :53 的服务后重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
+          clear_pending_marker
+          ;;
+        *)
+          echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：无法确认 :53 的占用情况（本机无 ss/python3 可测），为避免抢端口失败，agent 未恢复。"
+          echo "如需继续用 agent 分流，请重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
+          clear_pending_marker
+          ;;
+      esac
       ;;
     *)
       echo "agent 还原前在运行（监听 $AGENT_LISTEN），正在恢复..."
-      if systemctl start "$AGENT_UNIT" 2>/dev/null && systemctl is-active --quiet "$AGENT_UNIT" 2>/dev/null; then
+      if restart_agent; then
         echo "agent 已恢复运行（监听 $AGENT_LISTEN）。"
       else
         echo "警告: agent 恢复启动失败（监听 $AGENT_LISTEN），系统 DNS 不受影响；请看 journalctl -u dnsunlock-agent" >&2
+        write_pending_marker "$AGENT_LISTEN"
       fi
       ;;
   esac
