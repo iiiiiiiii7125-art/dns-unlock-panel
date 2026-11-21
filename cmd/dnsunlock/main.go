@@ -269,8 +269,20 @@ func runCheck(args []string) {
 	if listen == "" {
 		listen = env("DNS_LISTEN", ":53")
 	}
+	// V016-18: pass the config file's allowlist through (the old code
+	// never read fc.Allowlist, so check warned "no DNS allowlist set"
+	// even when one was configured), and suppress the warning outright
+	// — check never listens on any port, so the warning is inapplicable
+	// in this mode even with an empty allowlist.
+	var allowlist []string
+	for _, e := range strings.Split(fc.Allowlist, ",") {
+		if strings.TrimSpace(e) != "" {
+			allowlist = append(allowlist, strings.TrimSpace(e))
+		}
+	}
 	a := dnsagent.New(dnsagent.Config{
 		Listen: listen, PanelURL: panelURL, Token: token, ServerID: fc.ServerID,
+		Allowlist: allowlist, QuietAllowlistWarning: true,
 	})
 	results, code, err := a.RunCheck(*via)
 	if err != nil {

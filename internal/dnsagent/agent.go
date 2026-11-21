@@ -47,6 +47,13 @@ type Config struct {
 	// with an empty allowlist on non-loopback — fail-closed (P0-04).
 	// Never rely on empty in production.
 	Allowlist []string
+	// QuietAllowlistWarning suppresses the empty-allowlist warning.
+	// Only for modes that never listen on a socket at all (V016-18:
+	// `dnsunlock check` never answers a query, so the "this resolver
+	// answers anyone" warning is inapplicable there even with an
+	// empty allowlist). The dns-agent / sni-proxy entry points must
+	// never set this — their fail-closed startup check stays in place.
+	QuietAllowlistWarning bool
 }
 
 // target is what one domain suffix resolves to.
@@ -187,7 +194,7 @@ func New(cfg Config) *Agent {
 	// something to drop quietly — dropping it would silently turn the
 	// resolver into an open one.
 	a.allowlistErr = ValidateAllowlist(cfg.Allowlist)
-	if len(a.allowNets) == 0 && len(a.allowIPs) == 0 {
+	if len(a.allowNets) == 0 && len(a.allowIPs) == 0 && !cfg.QuietAllowlistWarning {
 		// Stderr, not stdout: stdout is machine-readable output for
 		// `dnsunlock check` (and nothing here is a query answer).
 		fmt.Fprintln(os.Stderr, "[agent] WARNING: no DNS allowlist set — this resolver answers anyone. On a public VPS set the allowlist in the 0600 config file (e.g. your client IPs / 192.168.1.0/24) or firewall port 53, or it will be abused for DNS amplification.")

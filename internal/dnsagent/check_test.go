@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -195,6 +196,41 @@ func TestRunCheckUnresolvableRuleFails(t *testing.T) {
 	}
 	if got := row.Line(); !strings.HasPrefix(got, "bbciplayer\tbbci.co.uk\t-\tFAIL\t") {
 		t.Fatalf("line = %q want bbciplayer FAIL row with '-' IP", got)
+	}
+}
+
+// TestNewQuietAllowlistWarning (V016-18): `dnsunlock check` never
+// listens, so its agent must not print the empty-allowlist warning;
+// the dns-agent path (flag off) still warns as before.
+func TestNewQuietAllowlistWarning(t *testing.T) {
+	captureStderr := func(f func()) string {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		old := os.Stderr
+		os.Stderr = w
+		f()
+		_ = w.Close()
+		os.Stderr = old
+		out, _ := io.ReadAll(r)
+		return string(out)
+	}
+	if got := captureStderr(func() {
+		_ = New(Config{Listen: "127.0.0.1:15353", QuietAllowlistWarning: true})
+	}); strings.Contains(got, "no DNS allowlist") {
+		t.Fatalf("quiet agent printed allowlist warning: %q", got)
+	}
+	if got := captureStderr(func() {
+		_ = New(Config{Listen: "127.0.0.1:15353"})
+	}); !strings.Contains(got, "no DNS allowlist") {
+		t.Fatalf("non-quiet agent did not print allowlist warning: %q", got)
+	}
+	// A configured allowlist never warns either way.
+	if got := captureStderr(func() {
+		_ = New(Config{Listen: "127.0.0.1:15353", Allowlist: []string{"127.0.0.1"}})
+	}); strings.Contains(got, "no DNS allowlist") {
+		t.Fatalf("agent with allowlist printed allowlist warning: %q", got)
 	}
 }
 
