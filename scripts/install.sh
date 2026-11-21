@@ -439,6 +439,83 @@ probe_panel() {
   return 1
 }
 
+# v0.1.6 item 6：validate_ipv4（照抄 AKDNS：正则 + 每段 ≤255）。
+validate_ipv4() {
+  local v="$1" a b c d rest o
+  v="$(echo "$v" | tr -d ' ')"
+  [ -n "$v" ] || return 1
+  case "$v" in *[!0-9.]*) return 1;; esac
+  IFS='.' read -r a b c d rest <<< "$v"
+  [ -n "${rest:-}" ] && return 1
+  for o in "$a" "$b" "$c" "$d"; do
+    case "$o" in ''|*[!0-9]*) return 1;; esac
+    [ "$o" -le 255 ] 2>/dev/null || return 1
+  done
+  return 0
+}
+
+# v0.1.6 item 6：面板地址形状校验。http(s)://host[:port][/...]；
+# host 是纯数字点分时必须是合法 IPv4（走 validate_ipv4），域名或 IPv6
+# 形状上放过（连通性由 probe_panel 验证）。
+valid_panel_url() {
+  local u="$1" rest hostport host port
+  case "$u" in http://*|https://*) ;; *) return 1;; esac
+  rest="${u#*://}"
+  [ -n "$rest" ] || return 1
+  hostport="${rest%%/*}"
+  [ -n "$hostport" ] || return 1
+  case "$hostport" in
+    \[*\]*)
+      host="${hostport#[}"; host="${host%\]*}"
+      case "$hostport" in
+        *\]:*) port="${hostport##*:}"; case "$port" in ''|*[!0-9]*) return 1;; esac; [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || return 1;;
+      esac
+      ;;
+    *:*)
+      host="${hostport%%:*}"; port="${hostport##*:}"
+      case "$port" in ''|*[!0-9]*) return 1;; esac
+      [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || return 1
+      ;;
+    *)
+      host="$hostport"
+      ;;
+  esac
+  [ -n "$host" ] || return 1
+  case "$host" in
+    *[!0-9.]*) : ;; # 域名或 IPv6：形状上放过，probe 验证连通性
+    *) validate_ipv4 "$host" || return 1 ;;
+  esac
+  return 0
+}
+
+# v0.1.6 item 6：先探面板，探不到时给手动输入面板地址的入口（带校验），
+# 而不是只报错退出。无终端时仍直接报错退出（curl|bash 且无终端无法提问）。
+resolve_panel_base() {
+  local base="$1" manual=""
+  if PANEL_BASE="$(probe_panel "$base")"; then
+    echo "$PANEL_BASE"
+    return 0
+  fi
+  if ! has_tty; then
+    echo "无可交互终端，无法手动输入面板地址，安装停止。" >&2
+    return 1
+  fi
+  echo "面板都连不上（见上）。可以手动输入面板地址再试一次，或直接回车放弃。" >&2
+  ask manual "手动输入面板地址（如 http://203.0.113.5:8080，面板和 agent 在同一台机器上时可用 http://127.0.0.1:8080；回车放弃）: "
+  [ -n "${manual:-}" ] || return 1
+  manual="${manual%/}"
+  if ! valid_panel_url "$manual"; then
+    echo "面板地址格式不对: $manual（要像 http://203.0.113.5:8080，host 是 IPv4 时每段 ≤255）" >&2
+    return 1
+  fi
+  if PANEL_BASE="$(probe_panel "$manual")"; then
+    echo "$PANEL_BASE"
+    return 0
+  fi
+  echo "手动输入的面板地址也连不上，安装停止。" >&2
+  return 1
+}
+
 # P1-10: 先检查 systemd / 端口，再动手；没有 systemd 的机器直接停下，不留半截服务。
 if [ "$MODE" = "dns" ]; then
   command -v systemctl >/dev/null || { echo "需要 systemd（systemctl 不存在），本脚本不支持 OpenRC/SysVInit，请手动按 README 部署"; exit 1; }
@@ -487,9 +564,10 @@ if [ -z "${TOKEN:-}" ]; then
 fi
 
 # v0.1.3: 先探面板，443 被挡时自动改走 :8080（每步最多等 8 秒，不会卡 134 秒）。
+# v0.1.6 item 6：探不到时给手动输入面板地址的入口（resolve_panel_base）。
 # PANEL_URL 是登记的规范地址（写进配置文件，agent 运行时自己也会逐个试）；
 # PANEL_BASE 是本次安装实际用的地址。
-PANEL_BASE="$(probe_panel "$PANEL_URL")" || exit 1
+PANEL_BASE="$(resolve_panel_base "$PANEL_URL")" || exit 1
 if [ "$PANEL_BASE" != "$PANEL_URL" ]; then
   echo "面板 443 不通，已自动改走 $PANEL_BASE（面板直连 :8080）。"
 fi
@@ -665,6 +743,35 @@ if { [ "${TAKEOVER:-}" = "y" ] || [ "${TAKEOVER:-}" = "Y" ]; } && detect_hpve_in
     TAKEOVER="n"
   fi
 fi
+# v0.1.6 item 6：接管前照抄 AKDNS menu_apply 的安全流程——打印操作摘要 +
+# [y/N] 确认（默认 N）+ 自动备份（备份失败中止应用，见接管体内的 do_backup）。
+# 传输探测是只读探测，提前到摘要前做，摘要里写明传输方式。
+if { [ "${TAKEOVER:-}" = "y" ] || [ "${TAKEOVER:-}" = "Y" ]; }; then
+  probe_agent_transport "$_dl_host" "$_dl_port"
+  TAKEOVER_BACKENDS=""
+  if systemctl cat systemd-resolved.service >/dev/null 2>&1; then TAKEOVER_BACKENDS="systemd-resolved（只关 stub 监听）"; fi
+  if command -v nmcli >/dev/null 2>&1; then TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}NetworkManager（dns=none）"; fi
+  if command -v resolvconf >/dev/null 2>&1; then TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}resolvconf（head 文件）"; fi
+  if [ -f /etc/dhcp/dhclient.conf ]; then TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}dhclient（supersede）"; fi
+  if [ -d /etc/cloud/cloud.cfg.d ]; then TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}cloud-init（manage-resolv-conf: false）"; fi
+  if ls /etc/netplan/*.yaml >/dev/null 2>&1; then TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}netplan（改 nameservers，需再确认）"; fi
+  if [ -f /etc/nsswitch.conf ]; then TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}nsswitch（hosts: 行缺 dns 就补）"; fi
+  [ -z "$TAKEOVER_BACKENDS" ] && TAKEOVER_BACKENDS="无（只写静态 resolv.conf）"
+  echo "=== 接管前确认（操作摘要）==="
+  echo "  模式：永久接管（本机系统 DNS -> 127.0.0.1）"
+  echo "  DNS：nameserver 127.0.0.1（agent 监听 $_dl_host:$_dl_port）"
+  echo "  后端：$TAKEOVER_BACKENDS"
+  if [ "${USE_VC:-0}" = "1" ]; then echo "  传输方式：TCP（UDP 不通，写 options use-vc）"; else echo "  传输方式：UDP 直连 agent"; fi
+  echo "  接管方式：静态 resolv.conf + chattr +i 锁定（文件系统不支持时会警告）"
+  echo "  备份：自动备份当前状态到 /var/lib/dnsunlock/backup/<时间戳>_pre-takeover/（含 metadata.txt），备份失败则中止接管"
+  echo "  还原：dnsunlock-restore-dns（默认还原最早的一份，即原始状态）"
+  if ask_yes_no "确认按上面摘要接管本机 DNS 吗？"; then
+    echo "已确认，开始接管。"
+  else
+    echo "已取消接管：agent 本身已装好并在运行，只是不改本机系统 DNS。"
+    TAKEOVER="n"
+  fi
+fi
 if [ "${TAKEOVER:-}" = "y" ] || [ "${TAKEOVER:-}" = "Y" ]; then
   # v0.1.6 item 1：结构化备份——先备份当前状态，备份失败就中止，不动任何文件。
   # 第一次接管的备份就是原始状态、永不覆盖；/etc/dnsunlock/resolv.conf.orig
@@ -672,8 +779,6 @@ if [ "${TAKEOVER:-}" = "y" ] || [ "${TAKEOVER:-}" = "Y" ]; then
   do_backup "pre-takeover" || { echo "备份失败，已中止接管（未改任何文件），请检查磁盘 / 权限后重跑"; exit 1; }
   # nsswitch：hosts: 行缺 dns 就补上（改前备份已在备份目录里）。
   ensure_nsswitch_dns
-  # 传输探测：UDP 通就不写 use-vc，UDP 不通、TCP 通才写。
-  probe_agent_transport "$_dl_host" "$_dl_port"
   # systemd-resolved
   if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
     mkdir -p /etc/systemd/resolved.conf.d
