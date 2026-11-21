@@ -785,7 +785,12 @@ _dl_host="${DNS_LISTEN%:*}"; _dl_host="${_dl_host#[}"; _dl_host="${_dl_host%]}"
 _dl_port="${DNS_LISTEN##*:}"
 [ -n "$_dl_host" ] || _dl_host="127.0.0.1"
 if command -v dig >/dev/null 2>&1; then
-  if dig +short "@$_dl_host" -p "$_dl_port" example.com A | grep -qE '^[0-9]+\.'; then echo "  验证通过: example.com 能走上游解析"; else echo "  验证失败: example.com 解析无结果，请看 journalctl -u dnsunlock-agent"; exit 1; fi
+  # UDP 先测（默认）；UDP 不通再试 TCP——有些环境会过滤 UDP/53（沙箱里回环
+  # UDP 回包会被丢，实测 Go UDP echo：server 收到包、client 永远等不到回包），
+  # agent 本身 TCP 能答就说明服务正常，不应硬失败。两路都不通仍是硬失败。
+  if dig +short "@$_dl_host" -p "$_dl_port" example.com A | grep -qE '^[0-9]+\.'; then echo "  验证通过: example.com 能走上游解析";
+  elif dig +tcp +short "@$_dl_host" -p "$_dl_port" example.com A | grep -qE '^[0-9]+\.'; then echo "  验证通过: example.com 能走上游解析（TCP；本机 UDP 解析不通，已自动走 TCP）";
+  else echo "  验证失败: example.com 解析无结果（UDP 与 TCP 均不通），请看 journalctl -u dnsunlock-agent"; exit 1; fi
   echo "  提示: 再测一条已设规则的域名，如 dig @$_dl_host -p $_dl_port netflix.com A，应返回规则里配的解锁 IP（未设规则时走上游属正常）。"
 else
   # v0.1.6 item 2：缺 dig 不再 exit 1——区分“测不了”和“测了不通”。
