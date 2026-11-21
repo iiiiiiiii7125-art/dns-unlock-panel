@@ -324,6 +324,8 @@ do_backup() {
     if systemctl is-enabled --quiet NetworkManager 2>/dev/null; then echo "nm_enabled=yes"; else echo "nm_enabled=no"; fi
     if systemctl is-active --quiet resolvconf 2>/dev/null; then echo "resolvconf_active=yes"; else echo "resolvconf_active=no"; fi
     if systemctl is-enabled --quiet resolvconf 2>/dev/null; then echo "resolvconf_enabled=yes"; else echo "resolvconf_enabled=no"; fi
+    # v0.1.6 item 7：主连接记 UUID，不记连接名（连接名含冒号会被截断）。
+    if command -v nmcli >/dev/null 2>&1; then echo "nm_primary_uuid=$(get_active_nm_connection_uuid 2>/dev/null || true)"; else echo "nm_primary_uuid="; fi
   } > "$dir/metadata.txt" || { rm -rf "$dir"; return 1; }
   # 兼容指针：只写一次（首份备份的原始状态）。
   if [ "$label" = "pre-takeover" ] && [ ! -e /etc/dnsunlock/resolv.conf.orig ]; then
@@ -383,6 +385,28 @@ detect_hpve_init() {
   [ -e /etc/hpve-init.conf ] && return 0
   systemctl list-unit-files 2>/dev/null | grep -qi "hpve" && return 0
   return 1
+}
+
+# v0.1.6 item 7：按默认路由接口取主网卡（无默认路由时取第一个 UP 的非 lo 网卡）。
+get_primary_interface() {
+  local dev
+  dev=$(ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
+  if [ -n "$dev" ]; then echo "$dev"; return 0; fi
+  ip -o link show up 2>/dev/null | awk -F': ' '{print $2}' | grep -v '^lo$' | head -1
+}
+
+# v0.1.6 item 7：按默认路由接口取活动连接的 UUID（连接名含冒号会被截断），
+# 无默认路由时回退取第一个活动连接（对应 AKDNS get_active_nm_connection_uuid）。
+# 凡是碰 NetworkManager 的地方一律按 UUID 操作，不用连接名。
+get_active_nm_connection_uuid() {
+  local iface uuid
+  command -v nmcli >/dev/null 2>&1 || return 1
+  iface=$(get_primary_interface)
+  if [ -n "$iface" ]; then
+    uuid=$(nmcli -t -f UUID,DEVICE connection show --active 2>/dev/null | awk -F: -v dev="$iface" '$2==dev {print $1; exit}')
+    [ -n "$uuid" ] && { echo "$uuid"; return 0; }
+  fi
+  nmcli -t -f UUID connection show --active 2>/dev/null | head -1
 }
 
 # v0.1.3 容错：面板 443 被挡时不要硬等 134 秒。候选顺序：
@@ -750,7 +774,12 @@ if { [ "${TAKEOVER:-}" = "y" ] || [ "${TAKEOVER:-}" = "Y" ]; }; then
   probe_agent_transport "$_dl_host" "$_dl_port"
   TAKEOVER_BACKENDS=""
   if systemctl cat systemd-resolved.service >/dev/null 2>&1; then TAKEOVER_BACKENDS="systemd-resolved（只关 stub 监听）"; fi
-  if command -v nmcli >/dev/null 2>&1; then TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}NetworkManager（dns=none）"; fi
+  if command -v nmcli >/dev/null 2>&1; then
+    # v0.1.6 item 7：主连接按 UUID 标识（不用连接名），已记进备份 metadata。
+    _puuid=$(get_active_nm_connection_uuid 2>/dev/null || true)
+    if [ -n "$_puuid" ]; then TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}NetworkManager（dns=none，主连接 $_puuid）";
+    else TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}NetworkManager（dns=none）"; fi
+  fi
   if command -v resolvconf >/dev/null 2>&1; then TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}resolvconf（head 文件）"; fi
   if [ -f /etc/dhcp/dhclient.conf ]; then TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}dhclient（supersede）"; fi
   if [ -d /etc/cloud/cloud.cfg.d ]; then TAKEOVER_BACKENDS="${TAKEOVER_BACKENDS:+$TAKEOVER_BACKENDS，}cloud-init（manage-resolv-conf: false）"; fi
@@ -788,7 +817,8 @@ if [ "${TAKEOVER:-}" = "y" ] || [ "${TAKEOVER:-}" = "Y" ]; then
   fi
   # NetworkManager（v0.1.6 item 1）：不再逐连接改 ipv4.dns，改成写
   # /etc/NetworkManager/conf.d/dnsunlock.conf（dns=none）+ reload，不停用网络，
-  # 新连接也不受影响。旧方式接管过的机器仍有 nm-backup.txt，还原脚本照旧认它。
+  # 新连接也不受影响。旧方式接管过的机器仍有 nm-backup.txt，还原脚本照旧认它
+  #（新格式记 UUID，老文件记连接名，见 item 7）。
   if command -v nmcli >/dev/null 2>&1; then
     mkdir -p /etc/NetworkManager/conf.d
     printf '[main]\ndns=none\n' > /etc/NetworkManager/conf.d/dnsunlock.conf
@@ -900,6 +930,27 @@ ask_yes_no() {
   case "$ans" in y|Y) return 0;; *) return 1;; esac
 }
 
+# v0.1.6 item 7：按默认路由接口取主网卡（无默认路由时取第一个 UP 的非 lo 网卡）。
+get_primary_interface() {
+  local dev
+  dev=$(ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
+  if [ -n "$dev" ]; then echo "$dev"; return 0; fi
+  ip -o link show up 2>/dev/null | awk -F': ' '{print $2}' | grep -v '^lo$' | head -1
+}
+
+# v0.1.6 item 7：按默认路由接口取活动连接的 UUID（连接名含冒号会被截断），
+# 无默认路由时回退取第一个活动连接（对应 AKDNS get_active_nm_connection_uuid）。
+get_active_nm_connection_uuid() {
+  local iface uuid
+  command -v nmcli >/dev/null 2>&1 || return 1
+  iface=$(get_primary_interface)
+  if [ -n "$iface" ]; then
+    uuid=$(nmcli -t -f UUID,DEVICE connection show --active 2>/dev/null | awk -F: -v dev="$iface" '$2==dev {print $1; exit}')
+    [ -n "$uuid" ] && { echo "$uuid"; return 0; }
+  fi
+  nmcli -t -f UUID connection show --active 2>/dev/null | head -1
+}
+
 # 与 install.sh 的 do_backup 同款（独立脚本，自带一份）：备份当前 DNS 状态。
 # stdout 只输出备份目录路径，说明打到 stderr。失败返回 1。
 do_backup() {
@@ -935,6 +986,8 @@ do_backup() {
     if systemctl is-enabled --quiet NetworkManager 2>/dev/null; then echo "nm_enabled=yes"; else echo "nm_enabled=no"; fi
     if systemctl is-active --quiet resolvconf 2>/dev/null; then echo "resolvconf_active=yes"; else echo "resolvconf_active=no"; fi
     if systemctl is-enabled --quiet resolvconf 2>/dev/null; then echo "resolvconf_enabled=yes"; else echo "resolvconf_enabled=no"; fi
+    # v0.1.6 item 7：主连接记 UUID，不记连接名（连接名含冒号会被截断）。
+    if command -v nmcli >/dev/null 2>&1; then echo "nm_primary_uuid=$(get_active_nm_connection_uuid 2>/dev/null || true)"; else echo "nm_primary_uuid="; fi
   } > "$dir/metadata.txt" || { rm -rf "$dir"; return 1; }
   echo "已备份当前 DNS 状态 -> $dir" >&2
   echo "$dir"
@@ -963,18 +1016,29 @@ verify_after_restore() {
 }
 
 # 旧方式 NM 逐连接还原（备份里有 nm-backup.txt 时才做；v0.1.6 新方式接管不写它。
-# 连接标识目前是连接名；item 7 会改成按 UUID，见 nm-backup.txt 的格式说明）。
+# v0.1.6 item 7：按 UUID 操作。nm-backup.txt 新格式记 UUID；老文件记的是连接名
+#（可能含冒号），按名操作作兼容。UUID 形状的条目先核对该 UUID 是否还存在，
+#不存在就跳过并报错，不静默按名去碰另一个连接）。
 restore_nm_legacy() {
-  local file="$1"
+  local file="$1" id=""
   while IFS='|' read -r CON OLD4 OLD6; do
     [ -z "$CON" ] && continue
     if command -v nmcli >/dev/null 2>&1; then
+      id="$CON"
+      case "$CON" in
+        ????????-????-????-????-????????????)
+          if ! nmcli -g UUID connection show "$CON" 2>/dev/null | grep -qx "$CON"; then
+            echo "NetworkManager: 备份里的连接 UUID $CON 已不存在，跳过（原值 IPv4='$OLD4' IPv6='$OLD6'）" >&2
+            continue
+          fi
+          ;;
+      esac
       # P1-09：原值为空 = 当时没手动设 DNS，显式传空值清空；失败要报错，
       # 不能用 || true 静默吞掉（原值记在 nm-backup.txt 里，见报错信息）。
-      if ! nmcli connection modify "$CON" ipv4.dns "${OLD4:-}" ipv4.ignore-auto-dns no ipv6.dns "${OLD6:-}" ipv6.ignore-auto-dns no 2>/dev/null; then
-        echo "NetworkManager: 还原 $CON 的 DNS 失败，请手动检查（原值 IPv4='$OLD4' IPv6='$OLD6'）" >&2
+      if ! nmcli connection modify "$id" ipv4.dns "${OLD4:-}" ipv4.ignore-auto-dns no ipv6.dns "${OLD6:-}" ipv6.ignore-auto-dns no 2>/dev/null; then
+        echo "NetworkManager: 还原 $id 的 DNS 失败，请手动检查（原值 IPv4='$OLD4' IPv6='$OLD6'）" >&2
       fi
-      nmcli connection up "$CON" 2>/dev/null || echo "NetworkManager: 重新启用 $CON 失败" >&2
+      nmcli connection up "$id" 2>/dev/null || echo "NetworkManager: 重新启用 $id 失败" >&2
     fi
   done < "$file"
 }
