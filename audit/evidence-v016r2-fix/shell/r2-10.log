@@ -1,0 +1,19 @@
+worktree: /home/hatch/workspace/dns-unlock-panel-v016r2-shell
+PASS: bash -n install.sh
+PASS: 取到第二道 EXIT trap 原文
+trap: trap 'rm -f "$AUTH_CFG" /tmp/dnsunlock-whoami.json; rm -rf "$DL_TMP"; rm -f ${BASELINE_CHECK_FILE:+$BASELINE_CHECK_FILE ${BASELINE_CHECK_FILE}.err} ${AFTER_CHECK_FILE:+$AFTER_CHECK_FILE ${AFTER_CHECK_FILE}.err}' EXIT
+PASS: C trap 里含 BASELINE/AFTER_CHECK_FILE 及 .err
+PASS: C 变量在第一道 trap 之前已初始化为空
+PASS: C 两份 install.sh 仍 identical
+caseA subshell rc=3
+PASS: A 基线文件被清
+PASS: A 基线 .err 被清
+PASS: A 复测文件被清
+PASS: A 复测 .err 被清
+PASS: A AUTH_CFG 被清
+PASS: A DL_TMP 被清
+PASS: A /tmp/dnsunlock-whoami.json 被清
+caseB subshell rc=0 stderr: 
+PASS: B 变量为空时 trap 不报错、rc=0
+PASS: B 空变量时 AUTH_CFG 照常清掉
+=== R2-10: PASS=14 FAIL=0 ===

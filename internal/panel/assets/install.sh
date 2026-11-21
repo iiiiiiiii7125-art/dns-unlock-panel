@@ -959,6 +959,10 @@ fi
 # 旧写法（curl -H 后直接跟 token）会把 token 写进进程列表（ps 可见）。
 # 配置文件路径进 ps 不打紧，token 本身不出现；脚本退出时删掉（token 是
 # hex 串，写进 curl 配置文件无需转义）。
+# R2-10：check 的 mktemp 文件（基线/复测 + 各自的 .err）在 EXIT trap 里清掉，
+# 安装中途 abort 也不残留。变量先置空，trap 里用 ${VAR:+...} 展开才安全。
+BASELINE_CHECK_FILE=""
+AFTER_CHECK_FILE=""
 AUTH_CFG="$(mktemp /tmp/dnsunlock-auth.XXXXXX)"
 chmod 600 "$AUTH_CFG"
 printf 'header = "X-Agent-Token: %s"\n' "$TOKEN" > "$AUTH_CFG"
@@ -985,7 +989,10 @@ echo "[1/6] 下载 $BIN ..."
 # 名字就是 $BIN；旧写法直接存为 /usr/local/bin/dnsunlock 再 sha256sum -c，
 # 目录里没有 $BIN，校验永远失败。校验通过后再装到最终位置。
 DL_TMP="$(mktemp -d)"
-trap 'rm -f "$AUTH_CFG" /tmp/dnsunlock-whoami.json; rm -rf "$DL_TMP"' EXIT
+# R2-10：同上，check 的 mktemp 文件（BASELINE/AFTER_CHECK_FILE 及其 .err）
+# 也在这里清掉——安装中途 abort 同样残留过。${VAR:+...} 在变量未赋值或
+# 为空时展开为空，rm -f 无参数即无操作，set -u 下也安全。
+trap 'rm -f "$AUTH_CFG" /tmp/dnsunlock-whoami.json; rm -rf "$DL_TMP"; rm -f ${BASELINE_CHECK_FILE:+$BASELINE_CHECK_FILE ${BASELINE_CHECK_FILE}.err} ${AFTER_CHECK_FILE:+$AFTER_CHECK_FILE ${AFTER_CHECK_FILE}.err}' EXIT
 curl -fsSL -K "$AUTH_CFG" "$PANEL_BASE/dl/$BIN" -o "$DL_TMP/$BIN" || { echo "下载失败：检查面板地址 / token / Release 是否已发"; exit 1; }
 curl -fsSL "$PANEL_BASE/dl/$BIN.sha256" -o "$DL_TMP/$BIN.sha256" || { echo "sha256 文件下载失败：为安全起见停止安装，不跳过校验"; exit 1; }
 (cd "$DL_TMP" && sha256sum -c "$BIN.sha256") || { echo "sha256 校验失败：二进制可能被篡改，停止安装"; exit 1; }
