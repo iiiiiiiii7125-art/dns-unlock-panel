@@ -316,6 +316,18 @@ assert "S9a 输出 hpve-init 提示" file_has "$LOG/s9a.log" "hpve-init"
 assert "S9a 未写备份" count_is_n "$BEFORE"
 assert "S9a resolv.conf 未动" files_eq /etc/resolv.conf "$RIG/fixtures/resolv.conf.hpve"
 
+# V016-14 修后 S9b 用 --backup 显式还原本次接管前备份（hpve fixture，
+# 1.1.1.1），还原后验证 getent 到 1.1.1.1:53；沙箱出口拦 1.1.1.1:53
+# （实测 dig 超时，198.19.0.1 则通），验证失败 → 还原诚实地 exit 1
+#（V016-10）。真机上 1.1.1.1 可达，验证通过 → exit 0。所以沙箱断言：
+# rc=0，或 rc=1 且日志里有验证未通过（证明失败是验证环节的诚实失败，
+# 不是崩溃/误杀）；文件效果由下一条断言单独验。不要把这条改成无条件 rc=0
+#（沙箱里恒失败），也不要改成只验文件（会漏掉 V016-10 的诚实退出码）。
+s9b_restore_rc_ok() {
+  if [ "${RUN_RC:-99}" = 0 ]; then return 0; fi
+  [ "${RUN_RC:-99}" = 1 ] && grep -qF "验证未通过" "$LOG/s9b-restore.log"
+}
+
 echo "=== S9b hpve-init：确认后继续接管 ==="
 reset_state
 cp -f "$RIG/fixtures/resolv.conf.hpve" /etc/resolv.conf
@@ -327,7 +339,7 @@ assert "S9b 备份 metadata 含原 DNS 1.1.1.1" newest_meta_has "1.1.1.1"
 # 直接断言 hpve 与产品语义矛盾。改用 --backup 显式还原本次接管前备份。
 B_S9B=$(newest_backup)
 run_restore "$LOG/s9b-restore.log" --backup "$B_S9B" --yes
-assert "S9b restore rc=0" assert_rc0
+assert "S9b restore rc=0（或沙箱 1.1.1.1 不通时诚实的验证失败 rc=1）" s9b_restore_rc_ok
 assert "S9b 清理：--backup 显式还原回 hpve 文件" files_eq /etc/resolv.conf "$RIG/fixtures/resolv.conf.hpve"
 
 echo "=== S10 nsswitch：hosts 行补 dns ==="

@@ -1815,13 +1815,16 @@ restore_agent_after() {
           _enabled_boot_warn
           ;;
         free)
-          echo "agent 还原前在运行（监听 $AGENT_LISTEN），但实测 :53 当前空闲（systemd-resolved 的 stub 并未在监听），正在把 agent 恢复运行..."
-          if restart_agent; then
-            echo "agent 已恢复运行（监听 $AGENT_LISTEN）。"
-          else
-            echo "警告: agent 恢复启动失败（监听 $AGENT_LISTEN），分流已停止；系统 DNS 不受影响。请手动 systemctl start dnsunlock-agent，或重跑安装脚本。" >&2
-            write_pending_marker "$AGENT_LISTEN"
-          fi
+          # V016-08 修的是“谎报”，不是“自动恢复”：实测 :53 空闲只说明
+          # resolved 的 stub 没起来，不等于可以把 agent 起回来。起回来会让
+          # 验证经 agent 通过、还原报成功，而分流实际还残留着（还原的本意
+          # 是去掉分流），与 V016-10 的 fail-closed 相抵触，也违背 P1(a)
+          # “通配符 agent 还原后保持停止”的定稿设计。所以保持停止，并明说
+          # stub 没起来、验证会如实报告；想继续用 agent 请重跑安装脚本。
+          echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：实测 :53 当前空闲（systemd-resolved 的 stub 并未在监听），按还原设计不自动恢复 agent，避免分流静默残留。"
+          echo "注意：resolved 的 stub 没起来，系统 DNS 可能不可用；还原后的验证会如实报告（验证失败则还原退出码为 1）。如需继续用 agent 分流，请重跑安装脚本；只想恢复系统 DNS 的话，请先检查 systemd-resolved 是否正常启动。"
+          clear_pending_marker
+          _enabled_boot_warn
           ;;
         held)
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：systemd-resolved 的 stub 未在 :53 上监听，但 :53 仍被占（${_rest:-别的服务}），agent 的通配符 :53 无法绑定。"
