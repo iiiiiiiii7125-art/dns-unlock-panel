@@ -1,0 +1,56 @@
+worktree: /home/hatch/workspace/dns-unlock-panel-v016r2-shell
+PASS: bash -n restore-resolv.sh
+--- A listen=:53 rc=0 ---
+agent 还原前在运行（监听 :53），现保持停止：实测 systemd-resolved 的 stub 已在 127.0.0.53:53 监听，agent 的通配符 :53 无法同时绑定。
+agent 还原前是开机自启（enabled），已直接改为不开机自启（systemctl disable dnsunlock-agent），下次启动不会再抢 :53；手动 systemctl start dnsunlock-agent 仍可用，重跑安装脚本会重新接管并恢复自启。
+systemctl disable dnsunlock-agent
+PASS: A rc=0
+PASS: A disable 被调用
+PASS: A 新文案（已直接改为不开机自启）
+--- B listen=:53 rc=0 ---
+agent 还原前在运行（监听 :53），现保持停止：实测 systemd-resolved 的 stub 已在 127.0.0.53:53 监听，agent 的通配符 :53 无法同时绑定。
+PASS: B rc=0
+PASS: B enabled=0 时不调用 disable
+--- C listen=127.0.0.53:53 rc=0 ---
+agent 还原前在运行（监听 127.0.0.53:53），现保持停止：该地址就是 systemd-resolved 的 stub 地址，agent 占了它会直接抢掉 stub。
+agent 还原前是开机自启（enabled），已直接改为不开机自启（systemctl disable dnsunlock-agent），下次启动不会再抢 :53；手动 systemctl start dnsunlock-agent 仍可用，重跑安装脚本会重新接管并恢复自启。
+systemctl disable dnsunlock-agent
+PASS: C rc=0
+PASS: C disable 被调用（stub-addr 分支）
+--- D listen=127.0.0.1:5353 rc=0 ---
+agent 还原前在运行（监听 127.0.0.1:5353），现保持停止：该监听地址已被占（127.0.0.1:5353），agent 绑不上。
+agent 还原前是开机自启（enabled），已直接改为不开机自启（systemctl disable dnsunlock-agent），下次启动不会再抢 :53；手动 systemctl start dnsunlock-agent 仍可用，重跑安装脚本会重新接管并恢复自启。
+systemctl disable dnsunlock-agent
+PASS: D rc=0
+PASS: D disable 被调用（blocked 分支）
+--- E listen=:53 rc=0 ---
+agent 还原前在运行（监听 :53），现保持停止：实测 :53 当前空闲（systemd-resolved 的 stub 并未在监听），按还原设计不自动恢复 agent，避免分流静默残留。
+agent 还原前是开机自启（enabled），已直接改为不开机自启（systemctl disable dnsunlock-agent），下次启动不会再抢 :53；手动 systemctl start dnsunlock-agent 仍可用，重跑安装脚本会重新接管并恢复自启。
+systemctl disable dnsunlock-agent
+PASS: E rc=0
+PASS: E disable 被调用（free 分支）
+--- F listen=:53 rc=0 ---
+agent 还原前在运行（监听 :53），现保持停止：systemd-resolved 的 stub 未在 :53 上监听，但 :53 仍被占（10.0.0.5:53），agent 的通配符 :53 无法绑定。
+agent 还原前是开机自启（enabled），已直接改为不开机自启（systemctl disable dnsunlock-agent），下次启动不会再抢 :53；手动 systemctl start dnsunlock-agent 仍可用，重跑安装脚本会重新接管并恢复自启。
+systemctl disable dnsunlock-agent
+PASS: F rc=0
+PASS: F disable 被调用（held 分支）
+--- G listen=:53 rc=0 ---
+agent 还原前在运行（监听 :53），现保持停止：实测 systemd-resolved 的 stub 已在 127.0.0.53:53 监听，agent 的通配符 :53 无法同时绑定。
+警告: agent 还原前是开机自启（enabled），但 systemctl disable dnsunlock-agent 失败，下次启动仍可能抢 :53；请手动执行 systemctl disable dnsunlock-agent，或重跑安装脚本。
+systemctl disable dnsunlock-agent
+PASS: G rc=0（disable 失败不影响还原）
+PASS: G disable 失败警告写出
+--- H listen=:53 rc=0 ---
+agent 还原前在运行（监听 :53），现保持停止：无法确认 :53 的占用情况（本机无 ss/python3 可测），为避免抢端口失败，agent 未恢复。
+agent 还原前是开机自启（enabled），已直接改为不开机自启（systemctl disable dnsunlock-agent），下次启动不会再抢 :53；手动 systemctl start dnsunlock-agent 仍可用，重跑安装脚本会重新接管并恢复自启。
+systemctl disable dnsunlock-agent
+PASS: H rc=0
+PASS: H disable 被调用（unknown 分支）
+PASS: H 确实走了 unknown 分支
+--- I listen=:53 rc=0 ---
+agent 还原前未在运行，保持停止（未改动）。
+PASS: I rc=0
+PASS: I agent 未在运行时不调用 disable
+PASS: I 输出保持停止（未改动）
+=== V016-24: PASS=22 FAIL=0 ===

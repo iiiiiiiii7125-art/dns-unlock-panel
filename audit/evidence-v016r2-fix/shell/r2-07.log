@@ -1,0 +1,60 @@
+worktree: /home/hatch/workspace/dns-unlock-panel-v016r2-shell
+PASS: bash -n restore-resolv.sh
+--- scenario A (resolvectl) rc=1 ---
+resolv.conf: nameserver 127.0.0.1 
+temp-state/state: EXISTS
+boot-unit: EXISTS
+警告: resolvectl revert eth0 失败；可先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved 恢复。
+临时模式清理未完成：DNS 未恢复原状（见上），状态记录已保留（/etc/dnsunlock/temp-state/state），请手动处理后重跑 dnsunlock-restore-dns --temp-cleanup；开机清理 unit 已保留，下次启动会再试一次。
+PASS: A rc=1
+PASS: A 状态保留
+PASS: A unit 保留
+PASS: A 不打印“清理完成”
+PASS: A 打印“清理未完成”
+--- scenario B (resolvectl) rc=0 ---
+resolv.conf: nameserver 127.0.0.1 
+temp-state/state: GONE
+boot-unit: GONE
+临时模式清理：已 resolvectl revert eth0（运行时 DNS 已恢复）。
+临时模式清理完成。如仍有问题，先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved。
+PASS: B rc=0
+PASS: B 状态清掉
+PASS: B unit 清掉
+PASS: B 打印“清理完成”
+--- scenario C (direct-write) rc=1 ---
+resolv.conf: nameserver 127.0.0.1 
+temp-state/state: EXISTS
+boot-unit: EXISTS
+临时模式清理未完成：DNS 未恢复原状（见上），状态记录已保留（/etc/dnsunlock/temp-state/state），请手动处理后重跑 dnsunlock-restore-dns --temp-cleanup；开机清理 unit 已保留，下次启动会再试一次。
+PASS: C rc=1（orig 缺失）
+PASS: C 状态保留
+PASS: C resolv.conf 未动
+PASS: C 不打印“清理完成”
+--- scenario D (resolvectl) rc=0 ---
+resolv.conf: nameserver 127.0.0.1 
+temp-state/state: EXISTS
+boot-unit: EXISTS
+警告: resolvectl revert eth0 失败；可先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved 恢复。
+临时模式清理未完成：DNS 未恢复原状（见上），状态记录已保留（/etc/dnsunlock/temp-state/state），请手动处理后重跑 dnsunlock-restore-dns --temp-cleanup；开机清理 unit 已保留，下次启动会再试一次。
+PASS: D rc=0（--boot 恒返回 0）
+PASS: D 状态保留（下次启动再试）
+PASS: D 警告仍写进输出
+--- scenario E (direct-write) rc=0 ---
+resolv.conf: nameserver 1.1.1.1 
+temp-state/state: GONE
+boot-unit: GONE
+临时模式清理完成。如仍有问题，先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved。
+PASS: E rc=0
+PASS: E resolv.conf 恢复原值
+PASS: E 状态清掉
+PASS: E unit 清掉
+PASS: E 打印“清理完成”
+--- scenario F (resolvectl) rc=1 ---
+resolv.conf: nameserver 127.0.0.1 
+temp-state/state: EXISTS
+boot-unit: EXISTS
+警告: resolvectl revert eth0 失败；可先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved 恢复。
+临时模式清理未完成：DNS 未恢复原状（见上），状态记录已保留（/etc/dnsunlock/temp-state/state），请手动处理后重跑 dnsunlock-restore-dns --temp-cleanup；开机清理 unit 已保留，下次启动会再试一次。
+PASS: F rc=1（无永久备份分支也传播失败）
+PASS: F 状态保留
+=== R2-07: PASS=24 FAIL=0 ===

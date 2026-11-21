@@ -1,0 +1,31 @@
+worktree: /home/hatch/workspace/dns-unlock-panel-v016r2-shell
+PASS: bash -n restore-resolv.sh
+--- scenario A rc=1 ---
+resolv.conf: nameserver 127.0.0.1 
+agent-stop-called: NO
+错误: :53 上已有其他服务监听（0.0.0.0:53），重启 systemd-resolved 会抢不到 stub，还原已中止（agent 未动，系统 DNS 未改；只写了一份还原前备份 /var/lib/dnsunlock/backup/20261121-220638_pre-restore）；请先处理占 :53 的服务后重跑
+PASS: A rc=1（中止）
+PASS: A resolv.conf 未动（仍 127.0.0.1）
+PASS: A agent 未被 stop
+PASS: A 报错点名外来占位
+--- scenario B rc=0 ---
+resolv.conf: nameserver 1.1.1.1 
+agent-stop-called: NO
+已还原并验证通过（getent hosts example.com 有结果）
+PASS: B rc=0
+PASS: B resolv.conf 已还原
+--- scenario C rc=1 ---
+resolv.conf: nameserver 127.0.0.1 
+agent-stop-called: NO
+错误: :53 上已有其他服务监听（0.0.0.0:53），重启 systemd-resolved 会抢不到 stub，还原已中止（agent 未动，系统 DNS 未改；只写了一份还原前备份 /var/lib/dnsunlock/backup/20261121-220638_pre-restore）；请先处理占 :53 的服务后重跑
+PASS: C rc=1（中止）
+PASS: C resolv.conf 未动
+PASS: C agent 未被 stop
+--- scenario D rc=0 ---
+resolv.conf: nameserver 1.1.1.1 
+agent-stop-called: YES
+已还原并验证通过（getent hosts example.com 有结果）
+PASS: D rc=0
+PASS: D resolv.conf 已还原
+PASS: D agent 被 stop
+=== R2-04: PASS=13 FAIL=0 ===

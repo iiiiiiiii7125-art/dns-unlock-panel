@@ -1,0 +1,34 @@
+worktree: /home/hatch/workspace/dns-unlock-panel-v016r2-shell
+PASS: bash -n install.sh
+PASS: 静态：apply_temp_dns 内两处 direct-write 都是 state 在前、unit 在后
+PASS: 提取的新版函数片段 bash -n 通过
+PASS: 提取的旧版函数片段 bash -n 通过
+--- scenario A rc=0 ---
+resolv.conf: nameserver 127.0.0.1 
+temp-state: mode=direct-write
+boot-unit: EXISTS
+daemon-reload: state EXISTS
+enable: state EXISTS
+PASS: A rc=0
+PASS: A direct-write 完成
+PASS: A daemon-reload 时 state 已在
+PASS: A enable 时 state 已在
+--- scenario B rc=0 ---
+resolv.conf: nameserver 127.0.0.1 
+temp-state: mode=direct-write
+boot-unit: EXISTS
+daemon-reload: state EXISTS
+enable: state EXISTS
+PASS: B rc=0
+PASS: B direct-write 完成（resolvectl 失败回退）
+PASS: B daemon-reload 时 state 已在
+PASS: B enable 时 state 已在
+--- scenario C rc=0 ---
+resolv.conf: nameserver 127.0.0.1 
+temp-state: mode=direct-write
+boot-unit: EXISTS
+daemon-reload: state MISSING
+enable: state MISSING
+PASS: C（红证）旧版 daemon-reload 时 state 不在
+PASS: C（红证）旧版 enable 时 state 不在
+=== R2-08: PASS=14 FAIL=0 ===

@@ -5,7 +5,16 @@
 set -euo pipefail
 [ "$(id -u)" = "0" ] || { echo "请用 root 运行"; exit 1; }
 PURGE=0
-[ "${1:-}" = "--purge" ] && PURGE=1
+FORCE=0
+for _a in "$@"; do
+  case "$_a" in
+    --purge) PURGE=1;;
+    # V016-10：--force 透传给还原（仅还原后验证失败时跳过 fail-closed 检查，
+    # 大声警告、绝不默认；见下）。
+    --force) FORCE=1;;
+    *) echo "未知参数: $_a（可用 --purge / --force）"; exit 1;;
+  esac
+done
 # 1. 还原系统 DNS（如果安装时接管过）。还原失败 -> 停下，不删备份。
 # 接管痕迹有三种，任一存在都要先还原（V016-33：以前只认单份 .orig，
 # 结构化备份还在时也会跳过还原直接删 agent）：
@@ -18,12 +27,17 @@ ls -d /var/lib/dnsunlock/backup/*/ >/dev/null 2>&1 && TAKEOVER=1
 [ -e /etc/dnsunlock/temp-state/state ] && TAKEOVER=1
 if [ "$TAKEOVER" = 1 ]; then
   echo "还原系统 DNS..."
+  _restore_args=(--yes)
+  if [ "$FORCE" = 1 ]; then
+    echo "!!!! 警告：--force 已启用，还原后验证未通过时卸载仍会继续（跳过 fail-closed 检查）；还原前备份已保留，可回滚。" >&2
+    _restore_args+=(--force)
+  fi
   if [ -x /usr/local/bin/dnsunlock-restore-dns ]; then
     # v0.1.6：还原脚本默认要交互选备份；卸载是非交互流程，加 --yes
     #（默认还原最早的一份 = 原始状态，还原前仍自动备份当前状态）。
-    /usr/local/bin/dnsunlock-restore-dns --yes || { echo "还原失败（或还原后验证未通过），已停下，未删任何东西：/etc/dnsunlock/ 下的全部备份已保留；请先手动检查 DNS 是否已恢复（getent hosts example.com），处理好后再重跑卸载"; exit 1; }
+    /usr/local/bin/dnsunlock-restore-dns "${_restore_args[@]}" || { echo "还原失败（或还原后验证未通过），已停下，未删任何东西：/etc/dnsunlock/ 下的全部备份已保留；请先手动检查 DNS 是否已恢复（getent hosts example.com），处理好后再重跑卸载"; exit 1; }
   elif [ -f "$(dirname "$0")/restore-resolv.sh" ]; then
-    bash "$(dirname "$0")/restore-resolv.sh" --yes || { echo "还原失败（或还原后验证未通过），已停下，未删任何东西：/etc/dnsunlock/ 下的全部备份已保留；请先手动检查 DNS 是否已恢复（getent hosts example.com），处理好后再重跑卸载"; exit 1; }
+    bash "$(dirname "$0")/restore-resolv.sh" "${_restore_args[@]}" || { echo "还原失败（或还原后验证未通过），已停下，未删任何东西：/etc/dnsunlock/ 下的全部备份已保留；请先手动检查 DNS 是否已恢复（getent hosts example.com），处理好后再重跑卸载"; exit 1; }
   else
     echo "找不到还原脚本，但存在 DNS 接管痕迹（/etc/dnsunlock/resolv.conf.orig、/var/lib/dnsunlock/backup/ 下的备份或 /etc/dnsunlock/temp-state），停下不删：请手动把 /etc/resolv.conf 还原（备份见上），再重跑卸载"; exit 1
   fi

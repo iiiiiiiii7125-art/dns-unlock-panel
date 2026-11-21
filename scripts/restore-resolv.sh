@@ -6,9 +6,14 @@
 # 还原默认选最早的一份（原始状态），还原前先自动备份当前状态，失败就中止；
 # 还原后验证并报告“已还原并验证通过”或“已还原但验证未通过”。
 # 老版本单份备份 /etc/dnsunlock/resolv.conf.orig 仍认（无备份目录时走老路）。
-# 用法：dnsunlock-restore-dns [--yes] [--backup <备份目录>]
+# 用法：dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup] [--boot] [--force]
 #   --yes     非交互：默认还原最早的一份，不再逐项确认（供 uninstall.sh 等脚本调用）
 #   --backup  指定要还原的备份目录（须含 resolv.conf），与 --yes 合用可全程非交互
+#   --temp-cleanup  只清理 --temp 临时模式留下的运行时 DNS；清理失败返回 1（状态已保留）
+#   --boot    与 --temp-cleanup 合用（开机 oneshot unit 用）：清理失败也返回 0
+#   --force   还原后验证失败时仍按成功退出（跳过 fail-closed 检查）：大声警告、
+#             绝不默认；仅用于验证永不过的环境自救（离线机器、占位暂清不掉）。
+#             操作者是 root，且还原前已有 pre-restore 备份，可逆。
 set -euo pipefail
 [ "$(id -u)" = "0" ] || { echo "请用 root 运行"; exit 1; }
 
@@ -119,7 +124,9 @@ ss_listen_53_p() {
   ss -tulnp 2>/dev/null | awk '$1 ~ /^(udp|tcp)/ && $5 ~ /:53$/ {u=""; for (i=7;i<=NF;i++) u=u $i " "; sub(/ $/,"",u); print $5 "\t" u}' | sort -u
 }
 
-_addr_host() { local a="$1"; a="${a%:*}"; a="${a#[}"; a="${a%]}"; printf '%s' "$a"; }
+# R2-03：ss 输出的监听地址可能带接口后缀（如 127.0.0.53%lo:53），先剥掉
+# %… 后缀再比对，否则 stub 会被误判为外来占位。
+_addr_host() { local a="$1"; a="${a%:*}"; a="${a#[}"; a="${a%]}"; a="${a%%\%*}"; printf '%s' "$a"; }
 _addr_port() { printf '%s' "${1##*:}"; }
 _is_wildcard_host() {
   case "$1" in ""|\*|0.0.0.0|::) return 0;; *) return 1;; esac
@@ -375,6 +382,9 @@ record_and_stop_agent_no_unit() {
 # 顺序（V016-02）：先读上次中止留下的待办标记，再按“冲突”检查 :53——
 # 只有会挡住 resolved stub 绑定的监听才算障碍（通配符 :53；resolved 自己
 # 的 stub 127.0.0.53:53 不算，agent 自己的通配符监听也不算，停后就没了）。
+# R2-04：冲突检查在 AGENT_WAS_ACTIVE 早返回之前——无论 agent 是否在跑都
+# 先查（与无 unit 路径对齐）；原先 agent 未在跑时直接 return，外来 :53
+# 占位发现不了，还原先改 resolv.conf、后验证失败才 exit 1，系统 DNS 死。
 # 检查到障碍时在停 agent 之前就中止（agent 不动）；停完仍有障碍时中止，
 # 但先把 agent 起回来（起不回来也要明说 + 留待办标记，下次重跑不再谎报
 # “还原前未在运行”）。停 agent 失败时 agent 还在跑，不用恢复。
@@ -395,7 +405,6 @@ record_and_stop_agent() {
     _running_now=1
     clear_pending_marker
   fi
-  [ "$AGENT_WAS_ACTIVE" = 1 ] || return 0
   AGENT_LISTEN=$(agent_listen_from_config)
   if [ ! -f /etc/dnsunlock/config.json ] && [ -n "$_pending" ]; then AGENT_LISTEN="$_pending"; fi
   # 停之前先检查：有没有停完也不会消失的、会挡 stub 的监听。
@@ -403,6 +412,7 @@ record_and_stop_agent() {
     echo "错误: :53 上已有其他服务监听（$_blockers），重启 systemd-resolved 会抢不到 stub，还原已中止（agent 未动，系统 DNS 未改；只写了一份还原前备份 ${PRE_RESTORE_BACKUP:-（见 /var/lib/dnsunlock/backup/ 下最新一份）}）；请先处理占 :53 的服务后重跑" >&2
     exit 1
   fi
+  [ "$AGENT_WAS_ACTIVE" = 1 ] || return 0
   if [ "$_running_now" = 1 ]; then
     echo "还原前 agent 在运行（监听 $AGENT_LISTEN），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）..."
     if ! systemctl stop "$AGENT_UNIT" 2>/dev/null; then
@@ -464,7 +474,9 @@ EOF
 measure_53() {
   if command -v ss >/dev/null 2>&1; then
     local addrs=""
-    addrs=$(ss_listen_53_p 2>/dev/null | cut -f1 | sort -u | tr '\n' ' ' | sed 's/ $//')
+    # R2-03：ss 输出的地址可能带接口后缀（127.0.0.53%lo:53），归一化掉
+    # %… 后缀再比对，否则 stub 分支是死代码、误报 held。
+    addrs=$(ss_listen_53_p 2>/dev/null | cut -f1 | sed 's/%[^ :]*//g' | sort -u | tr '\n' ' ' | sed 's/ $//')
     if [ -z "$addrs" ]; then echo "free"; return 0; fi
     case " $addrs " in
       *" 127.0.0.53:53 "*) echo "stub 127.0.0.53:53"; return 0;;
@@ -489,11 +501,18 @@ PYEOF
   echo "unknown"
 }
 
-# _enabled_boot_warn：agent 保持停止、且还原前是开机自启时提醒下次启动会抢 :53（V016-24）。
-# AGENT_WAS_ENABLED 只写不读的死变量问题就此解决。
-_enabled_boot_warn() {
+# _enabled_boot_disable：agent 保持停止、且还原前是开机自启时直接 disable（V016-24）。
+# 只警告不够：还原可被非交互调用（uninstall 以 --yes 调还原），那时没人读
+# 输出；留下的 enabled 状态会在下次开机抢 :53，与还原本意矛盾。disable
+# 只关开机自启，不阻止手动 systemctl start，重跑安装脚本会恢复自启。
+# 仅当 AGENT_WAS_ENABLED=1 时做；无 unit 时该变量恒为 0，不动。
+_enabled_boot_disable() {
   if [ "$AGENT_WAS_ENABLED" = 1 ]; then
-    echo "注意: agent 仍是开机自启（enabled），下次启动时还会尝试绑定 :53、与 systemd-resolved 抢端口；如不再用 agent 分流，请执行 systemctl disable dnsunlock-agent，或重跑安装脚本重新接管。"
+    if systemctl disable "$AGENT_UNIT" 2>/dev/null; then
+      echo "agent 还原前是开机自启（enabled），已直接改为不开机自启（systemctl disable dnsunlock-agent），下次启动不会再抢 :53；手动 systemctl start dnsunlock-agent 仍可用，重跑安装脚本会重新接管并恢复自启。"
+    else
+      echo "警告: agent 还原前是开机自启（enabled），但 systemctl disable dnsunlock-agent 失败，下次启动仍可能抢 :53；请手动执行 systemctl disable dnsunlock-agent，或重跑安装脚本。" >&2
+    fi
   fi
 }
 
@@ -521,7 +540,7 @@ restore_agent_after() {
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：实测 systemd-resolved 的 stub 已在 $_rest 监听，agent 的通配符 :53 无法同时绑定。"
           echo "如需继续用 agent 分流，请重新执行安装脚本（它会重新关掉 stub 并接管）；只想恢复系统 DNS 的话，现在已经好了。"
           clear_pending_marker
-          _enabled_boot_warn
+          _enabled_boot_disable
           ;;
         free)
           # V016-08 修的是“谎报”，不是“自动恢复”：实测 :53 空闲只说明
@@ -533,19 +552,19 @@ restore_agent_after() {
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：实测 :53 当前空闲（systemd-resolved 的 stub 并未在监听），按还原设计不自动恢复 agent，避免分流静默残留。"
           echo "注意：resolved 的 stub 没起来，系统 DNS 可能不可用；还原后的验证会如实报告（验证失败则还原退出码为 1）。如需继续用 agent 分流，请重跑安装脚本；只想恢复系统 DNS 的话，请先检查 systemd-resolved 是否正常启动。"
           clear_pending_marker
-          _enabled_boot_warn
+          _enabled_boot_disable
           ;;
         held)
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：systemd-resolved 的 stub 未在 :53 上监听，但 :53 仍被占（${_rest:-别的服务}），agent 的通配符 :53 无法绑定。"
           echo "如需继续用 agent 分流，请先处理占 :53 的服务后重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
           clear_pending_marker
-          _enabled_boot_warn
+          _enabled_boot_disable
           ;;
         *)
           echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：无法确认 :53 的占用情况（本机无 ss/python3 可测），为避免抢端口失败，agent 未恢复。"
           echo "如需继续用 agent 分流，请重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
           clear_pending_marker
-          _enabled_boot_warn
+          _enabled_boot_disable
           ;;
       esac
       ;;
@@ -558,12 +577,12 @@ restore_agent_after() {
         echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：该地址就是 systemd-resolved 的 stub 地址，agent 占了它会直接抢掉 stub。"
         echo "如需继续用 agent 分流，请重跑安装脚本并改监听地址（例如 bash install.sh --dns-listen 127.0.0.1:53）；只想恢复系统 DNS 的话，现在已经好了。"
         clear_pending_marker
-        _enabled_boot_warn
+        _enabled_boot_disable
       elif _blockers=$(listen_blocked "$AGENT_LISTEN"); then
         echo "agent 还原前在运行（监听 $AGENT_LISTEN），现保持停止：该监听地址已被占（$_blockers），agent 绑不上。"
         echo "如需继续用 agent 分流，请先处理占用的服务后重跑安装脚本；只想恢复系统 DNS 的话，现在已经好了。"
         clear_pending_marker
-        _enabled_boot_warn
+        _enabled_boot_disable
       else
         echo "agent 还原前在运行（监听 $AGENT_LISTEN），正在恢复..."
         if restart_agent; then
@@ -799,6 +818,21 @@ restore_legacy() {
   echo "已还原 /etc/resolv.conf <- /etc/dnsunlock/resolv.conf.orig"
 }
 
+# clear_temp_state：只清临时状态记录与开机清理 unit，不动 resolv.conf（R2-01）。
+# 还原成功后调用：永久还原取代了临时 DNS，旧记录再留着，下次重启时开机
+# unit 会按记录把 resolv.conf 恢复成临时原状（即接管态 127.0.0.1），等于
+# 撤销还原。绝不能用 cleanup_temp_state 代替——后者会按记录恢复 DNS。
+# 也覆盖 resolvectl 路径的惰性残留（R2-05：只有 state 文件、无开机 unit、
+# 无 DNS 效应，同样清掉）。尽力而为，失败只警告，不致命。
+clear_temp_state() {
+  rm -rf /etc/dnsunlock/temp-state 2>/dev/null || true
+  if [ -f /etc/systemd/system/dnsunlock-temp-restore.service ]; then
+    systemctl disable dnsunlock-temp-restore.service 2>/dev/null || true
+    rm -f /etc/systemd/system/dnsunlock-temp-restore.service
+    systemctl daemon-reload 2>/dev/null || true
+  fi
+}
+
 # cleanup_temp_state：清理 --temp 临时模式留下的运行时 DNS（V016-01）。
 # 按 /etc/dnsunlock/temp-state/state 的记录来：
 #   resolvectl 模式：resolvectl revert <iface>（运行时设置，重启即失效，不动文件）；
@@ -806,11 +840,12 @@ restore_legacy() {
 #     （原先是软链时恢复软链 + 把内容写回目标），再清掉 temp-state 与开机 unit；
 #   none 模式：DNS 没动过，只清记录。
 # 若临时模式启动了 agent（agent_was_active=0），停掉它；之前已在跑的 agent 不动。
-# 尽力而为：哪步失败都警告并继续，最后仍清记录、返回 0（开机 unit 调用时不能失败）。
-# 注意：这里绝不能直接 systemctl restart systemd-resolved——agent 还占着 :53
+# R2-07：revert 失败不再 fail-open——失败时返回 1 并保留状态文件与开机 unit
+# （失败态可再现、可重试；开机 unit 下次启动会再跑一次清理），绝不打印
+# “清理完成”。注意：这里绝不能直接 systemctl restart systemd-resolved——agent 还占着 :53
 # 时 resolved 会抢不到 stub（正是 V016-01 的 P1）；要先停 agent，或用 resolvectl revert。
 cleanup_temp_state() {
-  local _state="/etc/dnsunlock/temp-state/state" _mode="" _iface="" _was_active="0" _link="" _tgt="" _pid=""
+  local _state="/etc/dnsunlock/temp-state/state" _mode="" _iface="" _was_active="0" _link="" _tgt="" _pid="" _revert_failed=0
   echo "临时模式清理：按 /etc/dnsunlock/temp-state 的记录恢复 DNS..."
   if [ ! -f "$_state" ]; then
     echo "临时模式清理：没有临时状态记录（/etc/dnsunlock/temp-state/state 不存在），无需清理。"
@@ -826,9 +861,11 @@ cleanup_temp_state() {
           echo "临时模式清理：已 resolvectl revert $_iface（运行时 DNS 已恢复）。"
         else
           echo "警告: resolvectl revert $_iface 失败；可先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved 恢复。" >&2
+          _revert_failed=1
         fi
       else
         echo "警告: 无法 resolvectl revert（无网卡记录或无 resolvectl）；可先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved 恢复。" >&2
+        _revert_failed=1
       fi
       ;;
     direct-write)
@@ -838,20 +875,24 @@ cleanup_temp_state() {
           _link=$(cat /etc/dnsunlock/temp-state/resolv.conf.link 2>/dev/null || true)
           rm -f /etc/resolv.conf
           if [ -n "$_link" ]; then
-            ln -s "$_link" /etc/resolv.conf 2>/dev/null || true
+            ln -s "$_link" /etc/resolv.conf 2>/dev/null || { echo "警告: 恢复 /etc/resolv.conf 软链 -> $_link 失败，请手动检查" >&2; _revert_failed=1; }
             case "$_link" in /*) _tgt="$_link" ;; *) _tgt="/etc/$_link" ;; esac
             if [ ! -e "$_tgt" ]; then
               mkdir -p "$(dirname "$_tgt")" 2>/dev/null || true
-              cp -L /etc/dnsunlock/temp-state/resolv.conf.orig "$_tgt" 2>/dev/null || echo "警告: 软链目标 $_tgt 不存在且写回失败，请手动恢复" >&2
+              cp -L /etc/dnsunlock/temp-state/resolv.conf.orig "$_tgt" 2>/dev/null || { echo "警告: 软链目标 $_tgt 不存在且写回失败，请手动恢复" >&2; _revert_failed=1; }
             fi
             echo "临时模式清理：已恢复 /etc/resolv.conf 软链 -> $_link。"
+          else
+            echo "警告: 临时状态里软链目标为空，无法恢复 /etc/resolv.conf 软链；请手动检查。" >&2
+            _revert_failed=1
           fi
         else
-          cp -L /etc/dnsunlock/temp-state/resolv.conf.orig /etc/resolv.conf 2>/dev/null || echo "警告: 恢复 /etc/resolv.conf 失败，请手动检查" >&2
+          cp -L /etc/dnsunlock/temp-state/resolv.conf.orig /etc/resolv.conf 2>/dev/null || { echo "警告: 恢复 /etc/resolv.conf 失败，请手动检查" >&2; _revert_failed=1; }
           echo "临时模式清理：已把 /etc/resolv.conf 从临时状态恢复。"
         fi
       else
         echo "警告: 临时状态里没有原 resolv.conf 备份，无法恢复文件；请手动检查 /etc/resolv.conf。" >&2
+        _revert_failed=1
       fi
       ;;
     none)
@@ -873,6 +914,11 @@ cleanup_temp_state() {
   else
     echo "临时模式清理：agent 在临时安装前已在运行，本次不动它。"
   fi
+  # R2-07：revert 失败时不删状态、不删 unit、不报“清理完成”，返回 1。
+  if [ "$_revert_failed" = 1 ]; then
+    echo "临时模式清理未完成：DNS 未恢复原状（见上），状态记录已保留（/etc/dnsunlock/temp-state/state），请手动处理后重跑 dnsunlock-restore-dns --temp-cleanup；开机清理 unit 已保留，下次启动会再试一次。" >&2
+    return 1
+  fi
   # 清掉临时状态与开机 unit（unit 自己删自己，下次开机不再跑）。
   rm -rf /etc/dnsunlock/temp-state 2>/dev/null || true
   if [ -f /etc/systemd/system/dnsunlock-temp-restore.service ]; then
@@ -886,20 +932,35 @@ cleanup_temp_state() {
 # ---- 参数 ----
 YES=0
 WANT_DIR=""
+BOOT_CLEANUP=0
+FORCE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --yes) YES=1; shift;;
     --backup) WANT_DIR="$2"; shift 2;;
+    --force) FORCE=1; shift;;
+    --boot)
+      # 只与 --temp-cleanup 合用（开机 oneshot unit 调它时放前面）：
+      # 表示本次调用来自开机 unit，清理失败也返回 0（警告写进日志），
+      # 不让 oneshot 失败；交互路径不用它，失败时返回 1。
+      BOOT_CLEANUP=1; shift;;
     --temp-cleanup)
-      # --temp 临时模式的退出清理（开机 oneshot unit 也调它）：按临时状态记录
-      # 恢复 DNS、停掉临时启动的 agent、清记录与 unit；尽力而为，恒返回 0。
-      cleanup_temp_state
+      # --temp 临时模式的退出清理：按临时状态记录恢复 DNS、停掉临时启动的
+      # agent、清记录与 unit。R2-07：交互路径上 revert 失败时返回 1（状态
+      # 已保留，可重跑）；开机 unit 调用（--boot --temp-cleanup）时恒返回 0。
+      if [ "$BOOT_CLEANUP" = 1 ]; then
+        cleanup_temp_state || true
+        exit 0
+      fi
+      cleanup_temp_state || exit 1
       exit 0;;
     --help|-h)
-      echo "用法: dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup]"
+      echo "用法: dnsunlock-restore-dns [--yes] [--backup <备份目录>] [--temp-cleanup] [--boot] [--force]"
       echo "  --yes     非交互：默认还原最早的一份（原始状态），不再逐项确认"
       echo "  --backup  指定要还原的备份目录（须含 resolv.conf）"
-      echo "  --temp-cleanup  只清理 --temp 临时模式留下的运行时 DNS（按临时状态记录）"
+      echo "  --temp-cleanup  只清理 --temp 临时模式留下的运行时 DNS（按临时状态记录）；清理失败返回 1（状态已保留，可重跑）"
+      echo "  --boot    与 --temp-cleanup 合用（开机 oneshot unit 用）：清理失败也返回 0，警告写进日志"
+      echo "  --force   还原后验证失败时仍按成功退出（跳过 fail-closed 检查）：大声警告、绝不默认；仅用于验证永不过的环境自救，还原前已有 pre-restore 备份，可逆"
       exit 0;;
     *) echo "未知参数: $1"; exit 1;;
   esac
@@ -954,9 +1015,21 @@ if [ -n "$CHOSEN" ]; then
   VERIFY_RC=0
   verify_after_restore || VERIFY_RC=$?
   restore_agent_after
+  # R2-01：还原已完成（无论验证过不过），清临时状态：残留的开机 unit 会在
+  # 下次重启把 resolv.conf 改回接管态。只在还原成功路径调，中止路径不调
+  # （中止时 DNS 未改，临时状态仍有效）。
+  clear_temp_state
   if [ "$VERIFY_RC" != 0 ]; then
-    echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
-    exit 1
+    # V016-10 --force：验证失败且给了 --force 时继续走（带醒目警告）而不
+    # 是 exit 1。操作者是 root，还原前已有 pre-restore 备份，可逆。
+    if [ "$FORCE" = 1 ]; then
+      echo "!!!! 警告：--force 已启用，还原后验证未通过仍按成功退出（跳过了 fail-closed 检查）!!!!" >&2
+      echo "!!!! 当前 DNS 状态：resolv.conf 已按备份 $CHOSEN 还原，但 getent/dig 验证无结果，系统 DNS 可能仍不可用；请立即手动验证：getent hosts example.com。" >&2
+      echo "!!!! 可逆：还原前已自动备份当前状态 -> $PRE_RESTORE_BACKUP；如需回滚：dnsunlock-restore-dns --backup \"$PRE_RESTORE_BACKUP\" --yes。" >&2
+    else
+      echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
+      exit 1
+    fi
   fi
   exit 0
 fi
@@ -974,17 +1047,31 @@ if [ -e /etc/dnsunlock/resolv.conf.orig ]; then
   VERIFY_RC=0
   verify_after_restore || VERIFY_RC=$?
   restore_agent_after
+  # R2-01：同上，还原已完成即清临时状态（中止路径不调）。
+  clear_temp_state
   if [ "$VERIFY_RC" != 0 ]; then
-    echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
-    exit 1
+    # V016-10 --force：同 CHOSEN 分支，验证失败且给了 --force 时带醒目
+    # 警告继续走而不是 exit 1（操作者是 root，还原前已有备份，可逆）。
+    if [ "$FORCE" = 1 ]; then
+      echo "!!!! 警告：--force 已启用，还原后验证未通过仍按成功退出（跳过了 fail-closed 检查）!!!!" >&2
+      echo "!!!! 当前 DNS 状态：resolv.conf 已按 /etc/dnsunlock/resolv.conf.orig 还原，但 getent/dig 验证无结果，系统 DNS 可能仍不可用；请立即手动验证：getent hosts example.com。" >&2
+      echo "!!!! 可逆：还原前已自动备份当前状态 -> $PRE_RESTORE_BACKUP；如需回滚：dnsunlock-restore-dns --backup \"$PRE_RESTORE_BACKUP\" --yes。" >&2
+    else
+      echo "还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。" >&2
+      exit 1
+    fi
   fi
   exit 0
 fi
 echo "没有找到永久备份（/var/lib/dnsunlock/backup/ 下无备份，也无 /etc/dnsunlock/resolv.conf.orig）。"
 if [ -f /etc/dnsunlock/temp-state/state ]; then
   echo "但找到 --temp 临时模式的状态记录，按记录清理临时 DNS："
-  cleanup_temp_state
-  exit 0
+  # R2-07：清理失败时返回 1（状态已保留），不谎报成功。
+  if cleanup_temp_state; then
+    exit 0
+  else
+    exit 1
+  fi
 fi
 echo "如果你用的是 --temp 临时模式：临时 DNS 没有永久备份可还，清理办法："
 echo "  - systemd-resolved 的机器：先停 dnsunlock-agent，再执行 systemctl restart systemd-resolved（resolvectl 设的 DNS 即失效；直接 restart 时 agent 还占着 :53，resolved 会抢不到 stub）"

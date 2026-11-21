@@ -1,0 +1,58 @@
+worktree: /home/hatch/workspace/dns-unlock-panel-v016r2-shell
+PASS: bash -n restore-resolv.sh
+PASS: bash -n uninstall.sh
+--- restore A (chosen) rc=1 ---
+resolv.conf: nameserver 1.1.1.1 
+已还原但验证未通过（getent hosts example.com 无结果，请检查 DNS 配置）
+还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。
+PASS: A rc=1（无 --force 仍 fail-closed）
+PASS: A resolv.conf 已还原
+--- restore B (chosen) rc=0 ---
+resolv.conf: nameserver 1.1.1.1 
+已还原但验证未通过（getent hosts example.com 无结果，请检查 DNS 配置）
+!!!! 警告：--force 已启用，还原后验证未通过仍按成功退出（跳过了 fail-closed 检查）!!!!
+!!!! 可逆：还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-221346_pre-restore；如需回滚：dnsunlock-restore-dns --backup "/var/lib/dnsunlock/backup/20261121-221346_pre-restore" --yes。
+PASS: B rc=0（--force 逃生）
+PASS: B resolv.conf 已还原
+PASS: B 大声警告 --force
+PASS: B 警告含 pre-restore 备份与回滚命令
+--- restore C (legacy) rc=0 ---
+resolv.conf: nameserver 1.1.1.1 
+已还原但验证未通过（getent hosts example.com 无结果，请检查 DNS 配置）
+!!!! 警告：--force 已启用，还原后验证未通过仍按成功退出（跳过了 fail-closed 检查）!!!!
+!!!! 可逆：还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-221346_pre-restore；如需回滚：dnsunlock-restore-dns --backup "/var/lib/dnsunlock/backup/20261121-221346_pre-restore" --yes。
+PASS: C rc=0（legacy + --force）
+PASS: C 大声警告 --force
+--- restore D (legacy) rc=1 ---
+resolv.conf: nameserver 1.1.1.1 
+已还原但验证未通过（getent hosts example.com 无结果，请检查 DNS 配置）
+还原已完成，但还原后验证未通过（见上），退出码 1；请检查 DNS 配置，确认无误后可重跑还原。
+PASS: D rc=1（legacy 无 --force 仍 fail-closed）
+--- restore E (chosen) rc=0 ---
+resolv.conf: nameserver 1.1.1.1 
+PASS: E rc=0（验证通过 + --force）
+PASS: E 验证通过时不打印 --force 警告
+--- uninstall F rc=0 ---
+var-lib-dnsunlock: EXISTS
+restore-args: --yes --force;
+还原系统 DNS...
+!!!! 警告：--force 已启用，还原后验证未通过时卸载仍会继续（跳过 fail-closed 检查）；还原前备份已保留，可回滚。
+PASS: F rc=0
+PASS: F 还原被调 --yes --force
+PASS: F 打印 --force 警告
+PASS: F 无 --purge 时 /var/lib/dnsunlock 保留
+--- uninstall G rc=0 ---
+var-lib-dnsunlock: EXISTS
+restore-args: --yes;
+还原系统 DNS...
+PASS: G rc=0
+PASS: G 还原被调 --yes（不带 --force）
+--- uninstall H rc=0 ---
+var-lib-dnsunlock: GONE
+restore-args: --yes --force;
+还原系统 DNS...
+!!!! 警告：--force 已启用，还原后验证未通过时卸载仍会继续（跳过 fail-closed 检查）；还原前备份已保留，可回滚。
+PASS: H rc=0
+PASS: H 还原被调 --yes --force
+PASS: H --purge 清掉 /var/lib/dnsunlock
+=== V016-10: PASS=22 FAIL=0 ===

@@ -1,0 +1,49 @@
+worktree: /home/hatch/workspace/dns-unlock-panel-v016r2-shell
+PASS: bash -n install.sh
+PASS: 帮助/提示不再把 5353 当退路（每处 5353 都在诚实警告/注释语境里）
+PASS: 5353 只剩 3 处诚实提及（守卫注释 + 提示警告 + 还原内嵌注释）
+PASS: apply_temp_dns 含端口守卫（_dl_port != 53 → mode=none）
+PASS: 永久接管拒绝块在 ask TAKEOVER 之后、hpve 检查之前
+PASS: 停用 resolved 升级加了端口=53 条件
+PASS: 两份 install.sh 仍 identical
+PASS: 提取的函数片段 bash -n 通过
+--- scenario A (127.0.0.1:5353) rc=0 ---
+resolv.conf: nameserver 1.1.1.1 
+temp-state: mode=none;iface=;listen=127.0.0.1:5353;agent_was_active=0;agent_was_enabled=0;timestamp=2026-11-21T22:05:36+0000;
+boot-unit: GONE
+resolvectl-called: NO
+注意: agent 监听端口不是 53（127.0.0.1:5353），无法做系统 DNS 接管（resolv.conf 写不下端口，写 nameserver 127.0.0.1 到不了 :5353 上的 agent）；临时模式不改本机 DNS。
+PASS: A rc=0
+PASS: A resolv.conf 未动（仍 1.1.1.1）
+PASS: A temp-state mode=none
+PASS: A 无开机 unit
+PASS: A 未调 resolvectl
+PASS: A 输出明说无法接管
+--- scenario B (127.0.0.1:53) rc=0 ---
+resolv.conf: nameserver 1.1.1.1 
+temp-state: mode=resolvectl;iface=host0;listen=127.0.0.1:53;agent_was_active=0;agent_was_enabled=0;timestamp=2026-11-21T22:05:36+0000;
+boot-unit: GONE
+resolvectl-called: YES resolvectl dns host0 127.0.0.1;
+临时模式：已用 resolvectl 把 host0 的 DNS 设为 127.0.0.1（agent）。
+临时模式说明：本次只改了运行时 DNS，没有永久备份、没有 chattr 锁、没有停任何管理器。
+PASS: B rc=0
+PASS: B resolvectl 路径（mode=resolvectl）
+PASS: B 调了 resolvectl dns
+PASS: B resolv.conf 未动
+--- scenario C (127.0.0.1:53) rc=0 ---
+resolv.conf: nameserver 127.0.0.1 
+temp-state: mode=direct-write;iface=;listen=127.0.0.1:53;agent_was_active=0;agent_was_enabled=0;timestamp=2026-11-21T22:05:36+0000;
+boot-unit: EXISTS
+resolvectl-called: NO
+临时模式：已直接写 /etc/resolv.conf（nameserver 127.0.0.1，不加 chattr 锁）。
+临时模式：已装开机清理 unit（dnsunlock-temp-restore.service），重启后自动恢复原 resolv.conf。
+临时模式说明：本次只改了运行时 DNS，没有永久备份、没有 chattr 锁、没有停任何管理器。
+PASS: C rc=0
+PASS: C direct-write 路径（mode=direct-write）
+PASS: C resolv.conf 已指 agent
+PASS: C 开机 unit 已装
+PASS: D :5353 + TAKEOVER=y → 拒绝接管（TAKEOVER=n）
+PASS: D :53 + TAKEOVER=y → 保持接管（TAKEOVER=y）
+PASS: D :5353 时停用 resolved 升级不触发
+PASS: D :53 时停用 resolved 升级条件仍成立
+=== R2-02: PASS=26 FAIL=0 ===

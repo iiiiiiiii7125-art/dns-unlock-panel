@@ -1,0 +1,23 @@
+worktree: /home/hatch/workspace/dns-unlock-panel-v016r2-shell
+PASS: bash -n restore-resolv.sh
+PASS: 提取的函数片段 bash -n 通过
+PASS: _addr_host '127.0.0.53%lo:53' → 127.0.0.53
+PASS: _addr_host '[fe80::1%eth0]:53' → fe80::1
+PASS: _addr_host '127.0.0.1:5353' → 127.0.0.1（无 % 时不变）
+PASS: _addr_host '0.0.0.0:53' → 0.0.0.0
+PASS: measure_53 stub-only-%lo → [stub 127.0.0.53:53]
+  stub-only-%lo: ss=[udp UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:* users:(("systemd-resolve",pid=1,fd=1))
+tcp LISTEN 0 4096 127.0.0.53%lo:53 0.0.0.0:* users:(("systemd-resolve",pid=1,fd=2))] measure=[stub 127.0.0.53:53]
+PASS: measure_53 wildcard-agent+stub-%lo → [stub 127.0.0.53:53]
+  wildcard-agent+stub-%lo: ss=[udp UNCONN 0 0 0.0.0.0:53 0.0.0.0:* users:(("dnsunlock",pid=123,fd=3))
+udp UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:* users:(("systemd-resolve",pid=1,fd=1))] measure=[stub 127.0.0.53:53]
+PASS: measure_53 foreign-only → [held 0.0.0.0:53]
+  foreign-only: ss=[udp UNCONN 0 0 0.0.0.0:53 0.0.0.0:* users:(("other",pid=999,fd=3))] measure=[held 0.0.0.0:53]
+PASS: measure_53 free → [free]
+  free: ss=[] measure=[free]
+PASS: measure_53 stub-plain-no-suffix → [stub 127.0.0.53:53]
+  stub-plain-no-suffix: ss=[udp UNCONN 0 0 127.0.0.53:53 0.0.0.0:* users:(("systemd-resolve",pid=1,fd=1))] measure=[stub 127.0.0.53:53]
+--- 本机真实 ss :53 行（信息）---
+=== R2-03: PASS=11 FAIL=0 ===
+OLD measure_53 on %lo input: [held 127.0.0.53%lo:53]
+OLD _addr_host: [127.0.0.53%lo]

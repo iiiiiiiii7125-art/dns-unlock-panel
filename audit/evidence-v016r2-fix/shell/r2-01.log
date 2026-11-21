@@ -1,0 +1,50 @@
+worktree: /home/hatch/workspace/dns-unlock-panel-v016r2-shell
+restore: /home/hatch/workspace/dns-unlock-panel-v016r2-shell/scripts/restore-resolv.sh
+PASS: bash -n restore-resolv.sh
+--- scenario A rc=0 ---
+resolv.conf: nameserver 1.1.1.1 
+temp-state: GONE
+temp-state/state: GONE
+boot-unit: GONE
+systemctl-disable-unit: YES
+从备份还原: /var/lib/dnsunlock/backup/20261121-120000_pre-takeover（pre-takeover，2026-11-21T12:00:00+0000）
+跳过 resolved 重载（备份时未在跑）
+已还原 /etc/resolv.conf <- /var/lib/dnsunlock/backup/20261121-120000_pre-takeover/resolv.conf
+已还原并验证通过（getent hosts example.com 有结果）
+agent 还原前未在运行，保持停止（未改动）。
+PASS: A rc=0
+PASS: A resolv.conf 回到 1.1.1.1
+PASS: A temp-state 已清
+PASS: A 开机 unit 已删
+PASS: A systemctl disable 调过 unit
+--- scenario B rc=0 ---
+resolv.conf: nameserver 1.1.1.1 
+temp-state: GONE
+temp-state/state: GONE
+boot-unit: GONE
+systemctl-disable-unit: NO
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261121-220415_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-220415_pre-restore
+已还原 /etc/resolv.conf <- /etc/dnsunlock/resolv.conf.orig
+已还原并验证通过（getent hosts example.com 有结果）
+agent 还原前未在运行，保持停止（未改动）。
+PASS: B rc=0
+PASS: B resolv.conf 回到 1.1.1.1
+PASS: B temp-state 已清（R2-05）
+--- scenario C rc=1 ---
+resolv.conf: nameserver 127.0.0.1 
+temp-state: EXISTS
+temp-state/state: EXISTS
+boot-unit: EXISTS
+systemctl-disable-unit: NO
+非交互模式：默认还原最早的一份（原始状态）: /var/lib/dnsunlock/backup/20261121-120000_pre-takeover
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261121-220415_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-220415_pre-restore
+从备份还原: /var/lib/dnsunlock/backup/20261121-120000_pre-takeover（pre-takeover，2026-11-21T12:00:00+0000）
+错误: :53 上已有其他服务监听（0.0.0.0:53），重启 systemd-resolved 会抢不到 stub，还原已中止（agent 未动，系统 DNS 未改；只写了一份还原前备份 /var/lib/dnsunlock/backup/20261121-220415_pre-restore）；请先处理占 :53 的服务后重跑
+PASS: C rc=1（中止）
+PASS: C resolv.conf 未动（仍 127.0.0.1）
+PASS: C temp-state 保留
+PASS: C 开机 unit 保留
+PASS: C 未调 disable 清 unit
+=== R2-01: PASS=14 FAIL=0 ===
