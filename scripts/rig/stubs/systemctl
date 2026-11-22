@@ -24,9 +24,25 @@ case "$1" in
     [ "$(unit_state "$1" enabled)" = "yes" ] && exit 0 || exit 1
     ;;
   restart)
-    # restart <unit>；resolved 重启时 stub 监听随之释放
+    # restart <unit>；resolved 重启时 stub 监听随之释放。
+    # F3-02：install.sh 重装时对已运行的 agent/proxy 用 restart——stub
+    # 必须模拟 systemd 的 stop+start 语义（先杀旧进程、再按新配置起
+    # 新进程），只记一条 markers 不算重启：run_install 停掉上个场景
+    # 的 agent 后只删 PID 文件、不复位 active 状态，S5 的 [3/6] 走
+    # restart 分支时若不真起 agent，[4/6] 验证必然失败（143/4 的
+    # 3 个 S5 FAIL 即此 stub 缺口，不是产品 bug——真 systemd 的
+    # restart 本来就会重起进程）。
     [ "$2" = "systemd-resolved" ] && kill_stub_holder
     echo "restart $2" >> /root/rig/logs/markers.log
+    if [ "$2" = "dnsunlock-agent" ]; then
+      if [ -f "$STATE/agent.pid" ]; then
+        kill "$(cat "$STATE/agent.pid")" 2>/dev/null || true
+        sleep 1
+        rm -f "$STATE/agent.pid"
+      fi
+      echo "yes" > "$STATE/$2.active"
+      /root/rig/stubs/start-agent
+    fi
     exit 0
     ;;
   stop)
