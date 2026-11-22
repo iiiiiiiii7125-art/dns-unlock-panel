@@ -689,8 +689,10 @@ reload_dns_service() {
 
 # 按备份里记的后端逐个分发重载。只重载备份时在跑的后端：
 # 原来没跑的管理器不替用户启动。
-# 注意：本函数在 resolv.conf 恢复之前跑，管理器重载时若改写 resolv.conf，
-# 后面恢复 resolv.conf 的步骤会把它盖回去，所以最终内容以备份为准。
+# 注意：本函数在 resolv.conf 首次恢复之后跑（F3-01）——NM 重激活 /
+# netplan apply / resolvconf -u 可能改写 resolv.conf，所以重载完后调用
+# 方要再确认一次（resolv_conf_matches_backup），不符就再恢复一次；
+# 那时 resolved 已在跑，改文件不会重新导入全局 DNS。
 reload_backends() {
   local dir="$1" backends="" b="" _rl_backends=()
   backends=$(meta_value "$dir" backends)
@@ -707,10 +709,47 @@ reload_backends() {
   done
 }
 
-# 从结构化备份目录还原。顺序：先恢复各后端文件 → 重新启用之前开着的管理器 →
-# 按后端重载 → 最后恢复 resolv.conf（保证没有任何管理器在之后再改写它）。
+# F3-01：把 /etc/resolv.conf 按备份恢复（软链优先，P1-09 目标写回同款）。
+# $1 = 软链记录文件（可不存在，不存在时按普通文件恢复），$2 = 内容备份文件。
+restore_resolv_conf_file() {
+  local linkfile="$1" contentfile="$2" link="" target=""
+  rm -f /etc/resolv.conf
+  if [ -n "$linkfile" ] && [ -f "$linkfile" ]; then
+    link=$(cat "$linkfile")
+    ln -s "$link" /etc/resolv.conf
+    # P1-09：原 resolv.conf 是软链时，只恢复软链不够——若目标文件已被删，
+    # 软链就指向空洞。目标不存在时，把备份的内容写回目标文件。
+    case "$link" in /*) target="$link" ;; *) target="/etc/$link" ;; esac
+    if [ ! -e "$target" ]; then
+      cp -L "$contentfile" "$target" 2>/dev/null || echo "注意: 软链目标 $target 已不存在且写回失败，请手动恢复" >&2
+      echo "已还原软链 /etc/resolv.conf -> $link，并把备份内容写回目标 $target"
+    else
+      echo "已还原软链 /etc/resolv.conf -> $link（目标文件仍在，内容以目标为准）"
+    fi
+  else
+    cp -L "$contentfile" /etc/resolv.conf
+    echo "已还原 /etc/resolv.conf <- $contentfile"
+  fi
+}
+
+# F3-01：当前 /etc/resolv.conf 是否与备份一致（软链比目标，文件比内容）。
+# 一致返回 0，供重载后的尾部再确认用。
+resolv_conf_matches_backup() {
+  local linkfile="$1" contentfile="$2"
+  if [ -n "$linkfile" ] && [ -f "$linkfile" ]; then
+    [ -L /etc/resolv.conf ] && [ "$(readlink /etc/resolv.conf)" = "$(cat "$linkfile")" ]
+  else
+    [ -f /etc/resolv.conf ] && cmp -s /etc/resolv.conf "$contentfile"
+  fi
+}
+
+# 从结构化备份目录还原。顺序：先恢复各后端文件 → 先恢复 resolv.conf
+# （F3-01：resolved 启动时读它导入全局 DNS，晚恢复会把接管态
+# 127.0.0.1 留下来，规则域名间歇性复活）→ 重新启用之前开着的管理器 →
+# 按后端重载 → 尾部再确认 resolv.conf 仍与备份一致（重载可能改写它，
+# 不符就再恢复一次；此时 resolved 已在跑，改文件不重新导入全局 DNS）。
 restore_from_dir() {
-  local dir="$1" link="" target=""
+  local dir="$1"
   echo "从备份还原: $dir（$(meta_value "$dir" label)，$(meta_value "$dir" timestamp)）"
   # P1 (v0.1.6)：先停 agent 再动 resolved，否则 resolved 抢不到 :53 的 stub。
   record_and_stop_agent
@@ -754,32 +793,25 @@ restore_from_dir() {
   rm -f /etc/resolvconf/resolv.conf.d/head.dnsunlock
   # 3. 旧方式 NM 逐连接还原（备份里有 nm-backup.txt 时才做）。
   if [ -f "$dir/nm-backup.txt" ]; then restore_nm_legacy "$dir/nm-backup.txt"; fi
-  # 4. 重新启用之前开着的管理器（按备份 metadata）。
+  # 4. 先恢复 resolv.conf（F3-01：必须在重启用/重载 resolved 之前——
+  # resolved 启动时读 /etc/resolv.conf 导入全局 DNS；若仍是接管态文件
+  # nameserver 127.0.0.1，导入后软链恢复也清不掉，规则域名间歇性复活）。
+  restore_resolv_conf_file "$dir/resolv.conf.symlink" "$dir/resolv.conf"
+  # 5. 重新启用之前开着的管理器（按备份 metadata）。
   if [ "$(meta_value "$dir" resolved_enabled)" = "yes" ]; then
     systemctl enable --now systemd-resolved 2>/dev/null || echo "警告: 重新启用 systemd-resolved 失败" >&2
   fi
   if [ "$(meta_value "$dir" resolvconf_enabled)" = "yes" ]; then
     systemctl enable --now resolvconf 2>/dev/null || echo "警告: 重新启用 resolvconf 失败" >&2
   fi
-  # 5. 按后端重载。
+  # 6. 按后端重载。
   reload_backends "$dir"
-  # 6. 最后恢复 resolv.conf（原先是符号链接就先恢复链接）。
-  rm -f /etc/resolv.conf
-  if [ -f "$dir/resolv.conf.symlink" ]; then
-    link=$(cat "$dir/resolv.conf.symlink")
-    ln -s "$link" /etc/resolv.conf
-    # P1-09：原 resolv.conf 是软链时，只恢复软链不够——若目标文件已被删，
-    # 软链就指向空洞。目标不存在时，把备份的内容写回目标文件。
-    case "$link" in /*) target="$link" ;; *) target="/etc/$link" ;; esac
-    if [ ! -e "$target" ]; then
-      cp -L "$dir/resolv.conf" "$target" 2>/dev/null || echo "注意: 软链目标 $target 已不存在且写回失败，请手动恢复" >&2
-      echo "已还原软链 /etc/resolv.conf -> $link，并把备份内容写回目标 $target"
-    else
-      echo "已还原软链 /etc/resolv.conf -> $link（目标文件仍在，内容以目标为准）"
-    fi
-  else
-    cp -L "$dir/resolv.conf" /etc/resolv.conf
-    echo "已还原 /etc/resolv.conf <- $dir/resolv.conf"
+  # 7. 尾部再确认（F3-01）：NM 重激活 / netplan apply / resolvconf -u
+  # 可能改写 resolv.conf；若与备份不符就再恢复一次。此时 resolved 已在
+  # 跑，改文件不会重新导入全局 DNS，所以最终内容仍以备份为准。
+  if ! resolv_conf_matches_backup "$dir/resolv.conf.symlink" "$dir/resolv.conf"; then
+    echo "注意: 后端重载后 /etc/resolv.conf 与备份不一致（被管理器改写），按备份再恢复一次。"
+    restore_resolv_conf_file "$dir/resolv.conf.symlink" "$dir/resolv.conf"
   fi
 }
 
@@ -789,6 +821,9 @@ restore_legacy() {
   record_and_stop_agent
   chattr -i /etc/resolv.conf 2>/dev/null || true
   rm -f /etc/systemd/resolved.conf.d/dnsunlock.conf
+  # F3-01：先恢复 resolv.conf 再重启 resolved（同 restore_from_dir 的
+  # 理由——启动时读文件导入全局 DNS，晚恢复就污染）。
+  restore_resolv_conf_file /etc/dnsunlock/resolv.conf.orig.link /etc/dnsunlock/resolv.conf.orig
   systemctl restart systemd-resolved 2>/dev/null || true
   if [ -f /etc/dnsunlock/nm-backup.txt ]; then
     restore_nm_legacy /etc/dnsunlock/nm-backup.txt
@@ -799,21 +834,11 @@ restore_legacy() {
   rm -f /etc/cloud/cloud.cfg.d/99-dnsunlock.cfg
   for f in /etc/dnsunlock/*.yaml.bak; do [ -e "$f" ] || continue; cp -a "$f" "/etc/netplan/$(basename "$f" .bak)"; done
   netplan apply 2>/dev/null || true
-  rm -f /etc/resolv.conf
-  if [ -f /etc/dnsunlock/resolv.conf.orig.link ]; then
-    LINK=$(cat /etc/dnsunlock/resolv.conf.orig.link)
-    ln -s "$LINK" /etc/resolv.conf
-    # P1-09：原 resolv.conf 是软链时，只恢复软链不够——若目标文件已被删，
-    # 软链就指向空洞。目标不存在时，把备份的内容写回目标文件。
-    case "$LINK" in /*) TARGET="$LINK" ;; *) TARGET="/etc/$LINK" ;; esac
-    if [ ! -e "$TARGET" ]; then
-      cp -L /etc/dnsunlock/resolv.conf.orig "$TARGET" 2>/dev/null || echo "注意: 软链目标 $TARGET 已不存在且写回失败，请手动恢复" >&2
-      echo "已还原软链 /etc/resolv.conf -> $LINK，并把备份内容写回目标 $TARGET"
-    else
-      echo "已还原软链 /etc/resolv.conf -> $LINK（目标文件仍在，内容以目标为准）"
-    fi
-  else
-    cp -L /etc/dnsunlock/resolv.conf.orig /etc/resolv.conf
+  # F3-01 尾部再确认：NM/resolvconf/netplan 步骤可能改写 resolv.conf，
+  # 不符就按备份再恢复一次（resolved 已在跑，不重新导入全局 DNS）。
+  if ! resolv_conf_matches_backup /etc/dnsunlock/resolv.conf.orig.link /etc/dnsunlock/resolv.conf.orig; then
+    echo "注意: 后端重载后 /etc/resolv.conf 与备份不一致（被管理器改写），按备份再恢复一次。"
+    restore_resolv_conf_file /etc/dnsunlock/resolv.conf.orig.link /etc/dnsunlock/resolv.conf.orig
   fi
   echo "已还原 /etc/resolv.conf <- /etc/dnsunlock/resolv.conf.orig"
 }
