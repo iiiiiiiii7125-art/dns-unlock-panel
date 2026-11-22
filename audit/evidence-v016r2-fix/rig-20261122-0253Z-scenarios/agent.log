@@ -1,0 +1,18 @@
+2026/11/22 02:57:21 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 02:57:23 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 02:58:05 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 02:58:46 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 02:59:27 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 03:00:07 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 03:01:01 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 03:01:45 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 03:02:20 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 03:02:39 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 03:04:03 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 03:04:50 dns-agent listening on 127.0.0.1:15353  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 03:04:50 dns-agent: IPV6_RECVPKTINFO not supported on this socket (protocol not available); using IP_PKTINFO instead
+2026/11/22 03:05:10 dns-agent listening on 127.0.0.1:15353  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 03:05:10 dns-agent: IPV6_RECVPKTINFO not supported on this socket (protocol not available); using IP_PKTINFO instead
+2026/11/22 03:05:12 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 03:05:32 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
+2026/11/22 03:06:15 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795316239377634625
