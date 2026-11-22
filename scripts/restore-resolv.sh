@@ -527,6 +527,10 @@ _enabled_boot_disable() {
 restore_agent_after() {
   if [ "$AGENT_WAS_ACTIVE" != 1 ]; then
     echo "agent 还原前未在运行，保持停止（未改动）。"
+    # F3-03：未在运行也要调 disable——enabled 但已停的 agent 否则仍开机
+    # 自启，下次启动抢 :53（其余 6 个分支都调，本分支漏了；函数内
+    # AGENT_WAS_ENABLED=1 守卫使未 enabled 时为 no-op）。
+    _enabled_boot_disable
     return 0
   fi
   case "$AGENT_LISTEN" in
