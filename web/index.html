@@ -711,7 +711,7 @@ async function runSelftest(id){
   try{
     const j=await api('/api/v1/servers/'+id+'/selftest',{method:'POST'});
     if(!j||typeof j!=='object'||!j.request_id)throw new Error(j&&j.error?j.error:'后端未返回 request_id（自测接口可能尚未部署）');
-    req=j.request_id;SELFTEST[id].request_id=req;
+    req=j.request_id;SELFTEST[id].request_id=req;renderServers(); // F1：POST 回来立即重绘，request_id 不等 3 秒轮询
   }catch(e){SELFTEST[id]={request_id:'',state:'error',error:e.message};renderServers();updateSelftestAllStatus();return}
   for(let i=0;i<50;i++){
     await new Promise(r=>setTimeout(r,3000));
