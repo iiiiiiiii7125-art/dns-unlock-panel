@@ -1,0 +1,53 @@
+--- reset_state ---
+--- reset done ---
+[PASS] 基线：resolved 在跑
+[PASS] 基线：stub 在 127.0.0.53:53 监听
+[PASS] 基线：无 drop-in
+[PASS] 基线：agent 不在跑
+[PASS] 基线：无临时状态
+[PASS] 基线：无临时 unit
+[PASS] 基线：resolv.conf 是 stub 软链
+[PASS] 基线：系统 DNS 可用
+[PASS] 基线：getent tiktok 不走规则
+install 127.0.0.1:53 temp=0 rc=0（日志 /root/v016/f301c-install.log）
+[PASS] 永久安装 rc=0
+[PASS] 永久安装后 getent tiktok 走规则
+[PASS] 永久安装后 resolv.conf=127.0.0.1
+[PASS] 永久安装后 agent 在跑
+--- F3-01 CHOSEN：还原 ---
+restore rc=0（日志 /root/v016/f301c-restore.log）
+[PASS] 还原 rc=0
+[PASS] F3-01 还原后立即 dig @127.0.0.53 tiktok ×5 全走上游
+[PASS] F3-01 还原后 resolvectl dns Global: 为空（无 127.0.0.1）
+[PASS] F3-01 还原后 getent tiktok 走上游（分流已断）
+--- 延迟 3 秒后复测 dig ×5 ---
+[PASS] F3-01 延迟 3 秒后 dig @127.0.0.53 tiktok ×5 仍全走上游
+[PASS] 还原后 resolv.conf 回 stub 软链
+[PASS] 还原后 resolved 在跑
+[PASS] 还原后系统 DNS 可用
+[PASS] 还原后 agent 已恢复运行（特定地址分支）
+--- snapshot: f301c 末态 (2026-11-22T04:00:09Z) ---
+resolved: active=active enabled=enabled
+agent: active=active enabled=enabled pid=4124
+ss :53 lines:
+udp   UNCONN 0      0          127.0.0.1:53        0.0.0.0:*          
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*          
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*          
+udp   UNCONN 0      0            0.0.0.0:5355      0.0.0.0:*          
+udp   UNCONN 0      0               [::]:5355         [::]:*          
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*          
+tcp   LISTEN 0      4096       127.0.0.1:53        0.0.0.0:*          
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*          
+tcp   LISTEN 0      4096         0.0.0.0:5355      0.0.0.0:*          
+tcp   LISTEN 0      4096            [::]:5355         [::]:*          
+resolv.conf: /run/systemd/resolve/stub-resolv.conf
+nameserver 127.0.0.53
+options edns0 trust-ad
+search .
+drop-in: no; temp-state: no; temp-unit: no; pending-marker: no
+getent tiktok: 23.214.22.137   tiktok.com
+getent example: 2606:4700:10::ac42:93f3 example.com
+--- reset_state ---
+--- reset done ---
+=== SUMMARY === scenario=f301c PASS=22 FAIL=0
+=== END f301c ===

@@ -1,0 +1,14 @@
+  dig #1 @127.0.0.53 tiktok.com A -> 23.214.22.137
+  dig #2 @127.0.0.53 tiktok.com A -> 23.214.22.144
+  dig #3 @127.0.0.53 tiktok.com A -> 23.214.22.144
+  dig #4 @127.0.0.53 tiktok.com A -> 23.214.22.140
+  dig #5 @127.0.0.53 tiktok.com A -> 23.214.22.143
+  resolvectl dns:
+    Global:
+    Link 2 (host0): 1.1.1.1
+--- 延迟 3 秒后复测 dig ×5 ---
+  dig #1 @127.0.0.53 tiktok.com A -> 23.214.22.137
+  dig #2 @127.0.0.53 tiktok.com A -> 23.214.22.143
+  dig #3 @127.0.0.53 tiktok.com A -> 23.214.22.137
+  dig #4 @127.0.0.53 tiktok.com A -> 23.214.22.137
+  dig #5 @127.0.0.53 tiktok.com A -> 23.214.22.144

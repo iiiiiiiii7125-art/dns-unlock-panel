@@ -1,0 +1,48 @@
+--- reset_state ---
+--- reset done ---
+[PASS] 基线：resolved 在跑
+[PASS] 基线：stub 在 127.0.0.53:53 监听
+[PASS] 基线：无 drop-in
+[PASS] 基线：agent 不在跑
+[PASS] 基线：无临时状态
+[PASS] 基线：无临时 unit
+[PASS] 基线：resolv.conf 是 stub 软链
+[PASS] 基线：系统 DNS 可用
+[PASS] 基线：getent tiktok 不走规则
+install 127.0.0.1:53 temp=0 rc=0（日志 /root/v016/f303-install.log）
+[PASS] 永久安装 rc=0
+[PASS] 永久安装后 agent 在跑
+[PASS] 永久安装后 agent enabled
+[PASS] 还原前 agent 已停
+[PASS] 还原前 agent 仍 enabled（待还原 disable）
+--- F3-03：还原 ---
+restore rc=0（日志 /root/v016/f303-restore.log）
+[PASS] 还原 rc=0
+[PASS] 还原后 agent 为 disabled
+[PASS] 还原日志有 disable 说明（已直接改为不开机自启）
+[PASS] 还原后 agent 仍停着
+[PASS] 还原后 resolv.conf 回 stub 软链
+[PASS] 还原后系统 DNS 可用
+--- snapshot: f303 末态 (2026-11-22T04:03:47Z) ---
+resolved: active=active enabled=enabled
+agent: active=inactive enabled=disabled pid=0
+ss :53 lines:
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*          
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*          
+udp   UNCONN 0      0            0.0.0.0:5355      0.0.0.0:*          
+udp   UNCONN 0      0               [::]:5355         [::]:*          
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*          
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*          
+tcp   LISTEN 0      4096         0.0.0.0:5355      0.0.0.0:*          
+tcp   LISTEN 0      4096            [::]:5355         [::]:*          
+resolv.conf: /run/systemd/resolve/stub-resolv.conf
+nameserver 127.0.0.53
+options edns0 trust-ad
+search .
+drop-in: no; temp-state: no; temp-unit: no; pending-marker: no
+getent tiktok: 23.214.22.140   tiktok.com
+getent example: 2606:4700:10::6814:179a example.com
+--- reset_state ---
+--- reset done ---
+=== SUMMARY === scenario=f303 PASS=20 FAIL=0
+=== END f303 ===

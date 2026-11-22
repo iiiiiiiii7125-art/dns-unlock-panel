@@ -1,0 +1,17 @@
+2026/11/22 03:22:36 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:22:41 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:23:25 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:24:10 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:24:55 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:25:48 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:26:30 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:27:05 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:27:25 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:28:48 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:29:39 dns-agent listening on 127.0.0.1:15353  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:29:39 dns-agent: IPV6_RECVPKTINFO not supported on this socket (protocol not available); using IP_PKTINFO instead
+2026/11/22 03:30:00 dns-agent listening on 127.0.0.1:15353  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:30:00 dns-agent: IPV6_RECVPKTINFO not supported on this socket (protocol not available); using IP_PKTINFO instead
+2026/11/22 03:30:02 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:30:22 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990
+2026/11/22 03:31:11 dns-agent listening on :53  panel=http://127.0.0.1:18180  server=srv-1795317751077021990

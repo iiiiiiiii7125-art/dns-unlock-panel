@@ -1,0 +1,12 @@
+可用的备份（时间倒序）：
+  [1] 2026-11-22T04:01:55+0000  pre-takeover  DNS: 127.0.0.53   /var/lib/dnsunlock/backup/20261122-040155_pre-takeover
+非交互模式：默认还原最早的一份（原始状态）: /var/lib/dnsunlock/backup/20261122-040155_pre-takeover
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261122-040212_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261122-040212_pre-restore
+从备份还原: /var/lib/dnsunlock/backup/20261122-040155_pre-takeover（pre-takeover，2026-11-22T04:01:55+0000）
+还原前 agent 在运行（监听 127.0.0.1:5353），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）...
+已还原软链 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf（目标文件仍在，内容以目标为准）
+跳过 resolvconf 重载（备份时未在跑）
+已还原并验证通过（getent hosts example.com 有结果）
+agent 还原前在运行（监听 127.0.0.1:5353），正在恢复...
+agent 已恢复运行（监听 127.0.0.1:5353）。

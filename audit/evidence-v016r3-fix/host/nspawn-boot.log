@@ -1,0 +1,81 @@
+Spawning container v016-test on /var/lib/machines/v016-test.
+Press ^] three times within 1s to kill container.
+systemd 252.39-1~deb12u2 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified)
+Detected virtualization systemd-nspawn.
+Detected architecture x86-64.
+
+Welcome to Debian GNU/Linux 12 (bookworm)!
+
+Hostname set to <ip-172-26-15-152>.
+Queued start job for default target graphical.target.
+[  OK  ] Created slice system-getty.slice - Slice /system/getty.
+[  OK  ] Created slice system-modprobe.slice - Slice /system/modprobe.
+[  OK  ] Created slice user.slice - User and Session Slice.
+[  OK  ] Started systemd-ask-password-consol…quests to Console Directory Watch.
+[  OK  ] Started systemd-ask-password-wall.p… Requests to Wall Directory Watch.
+[  OK  ] Reached target cryptsetup.target - Local Encrypted Volumes.
+[  OK  ] Reached target integritysetup.targe…Local Integrity Protected Volumes.
+[  OK  ] Reached target paths.target - Path Units.
+[  OK  ] Reached target remote-fs.target - Remote File Systems.
+[  OK  ] Reached target slices.target - Slice Units.
+[  OK  ] Reached target swap.target - Swaps.
+[  OK  ] Reached target veritysetup.target - Local Verity Protected Volumes.
+[  OK  ] Listening on systemd-initctl.socket… initctl Compatibility Named Pipe.
+[  OK  ] Listening on systemd-journald-dev-l…ocket - Journal Socket (/dev/log).
+[  OK  ] Listening on systemd-journald.socket - Journal Socket.
+[  OK  ] Listening on systemd-networkd.socket - Network Service Netlink Socket.
+         Mounting dev-hugepages.mount - Huge Pages File System...
+         Starting systemd-journald.service - Journal Service...
+         Starting systemd-network-generator.… units from Kernel command line...
+         Starting systemd-remount-fs.service…nt Root and Kernel File Systems...
+         Starting systemd-sysctl.service - Apply Kernel Variables...
+[  OK  ] Mounted dev-hugepages.mount - Huge Pages File System.
+[  OK  ] Finished systemd-network-generator.…rk units from Kernel command line.
+[  OK  ] Reached target network-pre.target - Preparation for Network.
+[  OK  ] Finished systemd-sysctl.service - Apply Kernel Variables.
+[  OK  ] Finished systemd-remount-fs.service…ount Root and Kernel File Systems.
+         Starting systemd-sysusers.service - Create System Users...
+[  OK  ] Started systemd-journald.service - Journal Service.
+         Starting systemd-journal-flush.serv…h Journal to Persistent Storage...
+[  OK  ] Finished systemd-sysusers.service - Create System Users.
+         Starting systemd-networkd.service - Network Configuration...
+         Starting systemd-tmpfiles-setup-dev…ate Static Device Nodes in /dev...
+[  OK  ] Finished systemd-journal-flush.serv…ush Journal to Persistent Storage.
+[  OK  ] Finished systemd-tmpfiles-setup-dev…reate Static Device Nodes in /dev.
+[  OK  ] Reached target local-fs-pre.target …reparation for Local File Systems.
+[  OK  ] Reached target local-fs.target - Local File Systems.
+         Starting systemd-tmpfiles-setup.ser…te System Files and Directories...
+[  OK  ] Finished systemd-tmpfiles-setup.ser…eate System Files and Directories.
+         Starting systemd-resolved.service - Network Name Resolution...
+         Starting systemd-update-utmp.servic…rd System Boot/Shutdown in UTMP...
+[  OK  ] Started systemd-networkd.service - Network Configuration.
+[  OK  ] Finished systemd-update-utmp.servic…cord System Boot/Shutdown in UTMP.
+[  OK  ] Started systemd-resolved.service - Network Name Resolution.
+[  OK  ] Reached target network.target - Network.
+[  OK  ] Reached target nss-lookup.target - Host and Network Name Lookups.
+[  OK  ] Reached target sysinit.target - System Initialization.
+[  OK  ] Started apt-daily.timer - Daily apt download activities.
+[  OK  ] Started apt-daily-upgrade.timer - D… apt upgrade and clean activities.
+[  OK  ] Started dpkg-db-backup.timer - Daily dpkg database backup timer.
+[  OK  ] Started e2scrub_all.timer - Periodi…etadata Check for All Filesystems.
+[  OK  ] Started systemd-tmpfiles-clean.time… Cleanup of Temporary Directories.
+[  OK  ] Reached target timers.target - Timer Units.
+[  OK  ] Listening on dbus.socket - D-Bus System Message Bus Socket.
+[  OK  ] Reached target sockets.target - Socket Units.
+[  OK  ] Reached target basic.target - Basic System.
+         Starting dbus.service - D-Bus System Message Bus...
+         Starting systemd-logind.service - User Login Management...
+         Starting systemd-user-sessions.service - Permit User Sessions...
+[  OK  ] Started dbus.service - D-Bus System Message Bus.
+[  OK  ] Finished systemd-user-sessions.service - Permit User Sessions.
+[  OK  ] Started console-getty.service - Console Getty.
+[  OK  ] Reached target getty.target - Login Prompts.
+[  OK  ] Started systemd-logind.service - User Login Management.
+[  OK  ] Reached target multi-user.target - Multi-User System.
+[  OK  ] Reached target graphical.target - Graphical Interface.
+         Starting systemd-update-utmp-runlev… Record Runlevel Change in UTMP...
+[  OK  ] Finished systemd-update-utmp-runlev… - Record Runlevel Change in UTMP.
+
+Debian GNU/Linux 12 ip-172-26-15-152 pts/0
+
+ip-172-26-15-152 login: 

@@ -1,0 +1,9 @@
+未找到结构化备份，走老路还原单份备份 /etc/dnsunlock/resolv.conf.orig
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261122-040102_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261122-040102_pre-restore
+还原前 agent 在运行（监听 127.0.0.1:53），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）...
+已还原软链 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf（目标文件仍在，内容以目标为准）
+已还原 /etc/resolv.conf <- /etc/dnsunlock/resolv.conf.orig
+已还原并验证通过（getent hosts example.com 有结果）
+agent 还原前在运行（监听 127.0.0.1:53），正在恢复...
+agent 已恢复运行（监听 127.0.0.1:53）。

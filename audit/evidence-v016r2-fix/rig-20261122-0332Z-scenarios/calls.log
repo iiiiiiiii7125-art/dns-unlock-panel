@@ -1,0 +1,65 @@
+03:41:15 systemctl daemon-reload
+03:41:15 systemctl enable dnsunlock-agent
+03:41:15 start-agent: pid 120547 port 53
+03:41:15 start-agent: 127.0.0.1:53 已监听
+03:41:15 systemctl is-active --quiet dnsunlock-agent
+03:41:15 systemctl restart dnsunlock-agent
+03:41:16 start-agent: pid 120838 port 53
+03:41:17 start-agent: 127.0.0.1:53 已监听
+03:41:18 systemctl --no-pager status dnsunlock-agent --lines=5
+03:41:34 systemctl list-unit-files
+03:41:49 systemctl cat systemd-resolved.service
+03:41:49 nmcli -t -f UUID,DEVICE connection show --active
+03:41:49 nmcli -t -f UUID connection show --active
+03:41:49 systemctl cat systemd-resolved.service
+03:41:49 systemctl is-active --quiet systemd-resolved
+03:41:50 systemctl is-enabled --quiet systemd-resolved
+03:41:50 systemctl is-active --quiet NetworkManager
+03:41:50 systemctl is-enabled --quiet NetworkManager
+03:41:50 systemctl is-active --quiet resolvconf
+03:41:50 systemctl is-enabled --quiet resolvconf
+03:41:50 nmcli -t -f UUID,DEVICE connection show --active
+03:41:50 nmcli -t -f UUID connection show --active
+03:41:50 systemctl is-active --quiet systemd-resolved
+03:41:50 systemctl restart systemd-resolved
+03:41:50 systemctl reload NetworkManager
+03:41:50 resolvconf -u
+03:41:50 chattr -i /etc/resolv.conf
+03:41:50 chattr +i /etc/resolv.conf
+03:41:57 systemctl is-active --quiet dnsunlock-agent
+03:41:57 systemctl cat systemd-resolved.service
+03:41:57 systemctl is-active --quiet systemd-resolved
+03:41:57 systemctl is-enabled --quiet systemd-resolved
+03:41:57 systemctl is-active --quiet NetworkManager
+03:41:57 systemctl is-enabled --quiet NetworkManager
+03:41:57 systemctl is-active --quiet resolvconf
+03:41:57 systemctl is-enabled --quiet resolvconf
+03:41:57 nmcli -t -f UUID,DEVICE connection show --active
+03:41:57 nmcli -t -f UUID connection show --active
+03:41:57 systemctl cat dnsunlock-agent.service
+03:41:57 systemctl is-enabled --quiet dnsunlock-agent
+03:41:57 systemctl is-active --quiet dnsunlock-agent
+03:41:58 systemctl stop dnsunlock-agent
+03:41:59 chattr -i /etc/resolv.conf
+03:41:59 systemctl enable --now systemd-resolved
+03:41:59 systemctl restart systemd-resolved
+03:41:59 systemctl disable dnsunlock-agent
+03:41:59 systemctl is-active --quiet dnsunlock-agent
+03:41:59 systemctl cat systemd-resolved.service
+03:41:59 systemctl is-active --quiet systemd-resolved
+03:41:59 systemctl is-enabled --quiet systemd-resolved
+03:42:00 systemctl is-active --quiet NetworkManager
+03:42:00 systemctl is-enabled --quiet NetworkManager
+03:42:00 systemctl is-active --quiet resolvconf
+03:42:00 systemctl is-enabled --quiet resolvconf
+03:42:00 nmcli -t -f UUID,DEVICE connection show --active
+03:42:00 nmcli -t -f UUID connection show --active
+03:42:00 systemctl cat dnsunlock-agent.service
+03:42:00 systemctl is-enabled --quiet dnsunlock-agent
+03:42:00 systemctl is-active --quiet dnsunlock-agent
+03:42:00 chattr -i /etc/resolv.conf
+03:42:00 systemctl enable --now systemd-resolved
+03:42:00 systemctl restart systemd-resolved
+03:42:00 systemctl is-active --quiet dnsunlock-agent
+03:42:00 nmcli -t -f UUID,DEVICE connection show --active
+03:42:00 nmcli -t -f UUID connection show --active

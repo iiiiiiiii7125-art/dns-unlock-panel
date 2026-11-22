@@ -1,0 +1,56 @@
+--- reset_state ---
+--- reset done ---
+[PASS] 基线：resolved 在跑
+[PASS] 基线：stub 在 127.0.0.53:53 监听
+[PASS] 基线：无 drop-in
+[PASS] 基线：agent 不在跑
+[PASS] 基线：无临时状态
+[PASS] 基线：无临时 unit
+[PASS] 基线：resolv.conf 是 stub 软链
+[PASS] 基线：系统 DNS 可用
+[PASS] 基线：getent tiktok 不走规则
+[PASS] 容器直连 egress 可用（curl example.com）
+[PASS] 容器 :443 空闲
+--- F3-02 SNI：首次安装 allowlist A=127.0.0.1 ---
+install sni allowlist=127.0.0.1 rc=0（日志 /root/v016/f302s-install-a.log）
+[PASS] SNI 首次安装 rc=0
+[PASS] SNI 代理在跑
+[PASS] SNI 代理在 :443 监听
+重装前 proxy MainPID=3035
+[PASS] allowlist A 下 127.0.0.1 被放行（探针 ALLOWED）
+--- F3-02 SNI：重装改 allowlist B=203.0.113.7 ---
+install sni allowlist=203.0.113.7 rc=0（日志 /root/v016/f302s-install-b.log）
+[PASS] SNI 重装 rc=0
+[FAIL] SNI 重装日志有“新配置已加载”验证通过
+重装后 proxy MainPID=3035（之前 3035）
+[FAIL] SNI 重装后 Main PID 变化
+[PASS] SNI 配置文件已写新 allowlist B
+[FAIL] 新 allowlist 生效：127.0.0.1 被拒绝（探针 DENIED）
+[PASS] SNI 代理仍在跑
+--- snapshot: f302s 末态 (2026-11-22T03:57:51Z) ---
+resolved: active=active enabled=enabled
+agent: active=inactive enabled= pid=0
+ss :53 lines:
+udp   UNCONN 0      0         127.0.0.54:53        0.0.0.0:*          
+udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*          
+udp   UNCONN 0      0            0.0.0.0:5355      0.0.0.0:*          
+udp   UNCONN 0      0               [::]:5355         [::]:*          
+tcp   LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*          
+tcp   LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*          
+tcp   LISTEN 0      4096         0.0.0.0:5355      0.0.0.0:*          
+tcp   LISTEN 0      4096            [::]:5355         [::]:*          
+resolv.conf: /run/systemd/resolve/stub-resolv.conf
+nameserver 127.0.0.53
+options edns0 trust-ad
+search .
+drop-in: no; temp-state: no; temp-unit: no; pending-marker: no
+getent tiktok: 23.214.22.229   tiktok.com
+getent example: 2606:4700:10::ac42:93f3 example.com
+--- reset_state ---
+--- reset done ---
+=== SUMMARY === scenario=f302s PASS=18 FAIL=3
+失败项：
+  - SNI 重装日志有“新配置已加载”验证通过
+  - SNI 重装后 Main PID 变化
+  - 新 allowlist 生效：127.0.0.1 被拒绝（探针 DENIED）
+=== END f302s ===
