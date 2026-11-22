@@ -1045,7 +1045,30 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  systemctl enable --now dnsunlock-proxy
+  # F3-02：enable --now 在已运行的 unit 上是 no-op——重装改 allowlist
+  # 后旧代理继续跑旧 allowlist，而下面直接打印“完成”并 exit 0，无验
+  # 证，旧 allowlist 静默残留（allowlist 是防泄漏的真实防线：已删的
+  # IP 仍能用代理、新加的 IP 用不了）。已 active 就 restart，否则
+  # enable --now 启动；随后验证新配置已加载（新进程 PID 变化）。
+  _proxy_pid_before=$(systemctl show dnsunlock-proxy -p MainPID --value 2>/dev/null || echo 0)
+  systemctl enable dnsunlock-proxy
+  if systemctl is-active --quiet dnsunlock-proxy 2>/dev/null; then
+    systemctl restart dnsunlock-proxy
+  else
+    systemctl start dnsunlock-proxy
+  fi
+  _proxy_pid_after=$(systemctl show dnsunlock-proxy -p MainPID --value 2>/dev/null || echo 0)
+  _proxy_ok=0
+  if systemctl is-active --quiet dnsunlock-proxy 2>/dev/null && [ -n "$_proxy_pid_after" ] && [ "$_proxy_pid_after" != "0" ]; then
+    if [ -z "$_proxy_pid_before" ] || [ "$_proxy_pid_before" = "0" ] || [ "$_proxy_pid_after" != "$_proxy_pid_before" ]; then
+      _proxy_ok=1
+    fi
+  fi
+  if [ "$_proxy_ok" != 1 ]; then
+    echo "错误: SNI 代理未能按新配置启动（新 allowlist 未加载，之前 PID ${_proxy_pid_before:-未知}，现在 PID ${_proxy_pid_after:-未知}）；请检查 journalctl -u dnsunlock-proxy 后重跑安装。" >&2
+    exit 1
+  fi
+  echo "验证通过: SNI 代理已按新配置启动（PID $_proxy_pid_after），新 allowlist 已加载。"
   echo "完成: SNI 代理已在 :443 运行（明文 HTTP 默认禁用，只放行 allowlist 里的 IP）。"
   echo "接下来: 把这台机器的公网 IP 填进面板 -> 解锁 IP, 再给平台选它。"
   echo "注意: 443 端口可能被 nginx/Caddy 占用, 冲突时请先停掉它们或改 SNI_LISTEN。"
@@ -1114,9 +1137,24 @@ if [ "${TEMP_MODE:-0}" = "1" ]; then
   TEMP_AGENT_WAS_ACTIVE=0; TEMP_AGENT_WAS_ENABLED=0
   systemctl is-active --quiet dnsunlock-agent 2>/dev/null && TEMP_AGENT_WAS_ACTIVE=1
   systemctl is-enabled --quiet dnsunlock-agent 2>/dev/null && TEMP_AGENT_WAS_ENABLED=1
-  systemctl start dnsunlock-agent
+  # F3-02：start 在已运行的 unit 上是 no-op——临时重装且 agent 已在跑
+  # 时新配置同样不加载，[4/6] 同样失败。已 active 就 restart。
+  if systemctl is-active --quiet dnsunlock-agent 2>/dev/null; then
+    systemctl restart dnsunlock-agent
+  else
+    systemctl start dnsunlock-agent
+  fi
 else
-  systemctl enable --now dnsunlock-agent
+  # F3-02：enable --now 在已运行的 unit 上是 no-op——重装改监听地址后
+  # 旧进程继续跑旧配置，[4/6] 验证按新地址探测必然失败（容器 v12
+  # 步 4 红证）。已 active 就 restart，否则 enable --now 启动；
+  # enable 保留以保开机自启。
+  systemctl enable dnsunlock-agent
+  if systemctl is-active --quiet dnsunlock-agent 2>/dev/null; then
+    systemctl restart dnsunlock-agent
+  else
+    systemctl start dnsunlock-agent
+  fi
 fi
 sleep 1
 systemctl --no-pager status dnsunlock-agent --lines=5 || true
