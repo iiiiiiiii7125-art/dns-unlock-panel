@@ -21,7 +21,8 @@
 #   （chroot 内 :53 / :15353）+ 真 dig/getent/curl/ss/ip + 真 chroot 绑定探测。
 # stub 的部分（PATH 前置 /root/rig/stubs，只在 chroot 内生效）：
 #   systemctl / resolvectl / nmcli / netplan / resolvconf / chattr / lsattr /
-#   python3（只实现 can_bind_listen 的 bind 探测，调 Go 写的 bindprobe）。
+#   python3（只拦截 can_bind_listen 的 bind 探测，调 Go 写的 bindprobe；
+#   其余调用转给 rootfs 里的真 /usr/bin/python3，见 scripts/rig/provision-rootfs.sh）。
 #   每个 stub 记录每次调用（命令+参数）到 /root/rig/logs/calls.log；
 #   systemctl 模拟最小状态（is-active/is-enabled 的 canned 值、
 #   disable/restart 写 marker 并真的启停台架里的 agent / 干掉 stub 占位进程）。
@@ -33,7 +34,7 @@
 #   S3 还原回滚 / S4 --temp resolvectl 路径 / S5 --temp 直接写文件 /
 #   S6 缺 dig 警告继续 / S7a 手动输入非法拒绝 / S7b 手动输入合法继续 /
 #   S8 摘要确认默认 N / S9a hpve-init 默认 N / S9b hpve-init 确认继续 /
-#   S10 nsswitch 补 dns / S11 升级路径（disable --now resolved）/
+#   S10 nsswitch 补 dns / S11 非 53 端口拒绝接管（R2-02，agent 照常跑）/
 #   S12 Tailscale 守卫 / S13 还原 --backup 指定备份 /
 #   S14 函数级（validate_ipv4 / valid_panel_url / probe / UUID / verify）/
 #   S15 无永久备份提示临时清理办法。
@@ -64,7 +65,9 @@
 #   S9a: 接管 y / hpve 空（默认 N）
 #   S9b: 接管 y / hpve y / 摘要 y
 #   S10: 接管 y / 摘要 y
-#   S11: 接管 y / 摘要 y
+#   S11: 接管 y（R2-02 守卫直接拒绝接管，摘要提问被跳过；答案流里 S11 的
+#         第二个 y 会滚到 S13 的第一个提问，S13 仍按 y/y 对齐，多余一行
+#         留在 pty 缓冲，无害；合并验证 2308Z 已证实——不要“修”答案流）
 #   S13: 接管 y / 摘要 y
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -113,7 +116,8 @@ cleanup_panel() {
 }
 trap cleanup_panel EXIT
 
-[ -d "$ROOT" ] || { echo "台架 rootfs 不存在: $ROOT"; exit 1; }
+# 台架 rootfs 由 provision-rootfs.sh 供应（在单跑锁内、端口复查后，见下），
+# 这里不只做存在检查——rootfs 缺失或缺 python3 都由它重建/补装。
 command -v unshare >/dev/null || { echo "需要 unshare"; exit 1; }
 command -v chroot >/dev/null || { echo "需要 chroot"; exit 1; }
 [ -x "$GO" ] || { echo "找不到 go：设 GO=/path/to/go（默认 ~/go/bin/go）"; exit 1; }
@@ -181,6 +185,12 @@ check_rig_ports_free() {
 }
 cleanup_stale_rig_processes
 check_rig_ports_free
+
+# R2-09 之后台架 rootfs 必须含真 python3（S14 verify_rule_domain 用它解析
+# JSON；stub 只实现 can_bind_listen，其余调用转给 /usr/bin/python3）。
+# 放在单跑锁内做：rootfs 若缺失则 debootstrap 重建，若缺 python3 则
+# chroot 内 apt 补装；参数以 scripts/rig/provision-rootfs.sh 为准。
+RIG_ROOTFS="$ROOT" bash scripts/rig/provision-rootfs.sh || { echo "台架 rootfs 供应失败"; exit 1; }
 
 echo "== 构建 dnsunlock（amd64）=="
 "$GO" build -trimpath -o dist/dnsunlock-linux-amd64 ./cmd/dnsunlock

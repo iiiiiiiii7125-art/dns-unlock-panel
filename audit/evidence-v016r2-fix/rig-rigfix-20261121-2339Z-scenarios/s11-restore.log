@@ -1,0 +1,23 @@
+可用的备份（时间倒序）：
+  [1] 2026-11-21T23:47:35+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-234735_pre-restore
+  [2] 2026-11-21T23:47:29+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-234728_pre-takeover
+  [3] 2026-11-21T23:46:14+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-234614_pre-restore
+  [4] 2026-11-21T23:46:08+0000  pre-takeover  DNS: 1.1.1.1 1.0.0.1   /var/lib/dnsunlock/backup/20261121-234608_pre-takeover
+  [5] 2026-11-21T23:44:01+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-234401_pre-restore
+  [6] 2026-11-21T23:43:54+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-234354_pre-takeover
+  [7] 2026-11-21T23:43:20+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-234320_pre-restore
+  [8] 2026-11-21T23:42:31+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-234231_pre-takeover
+  [9] 2026-11-21T23:41:02+0000  pre-restore  DNS: 127.0.0.1   /var/lib/dnsunlock/backup/20261121-234102_pre-restore
+  [10] 2026-11-21T23:40:55+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-234055_pre-takeover
+  [11] 2026-11-21T23:40:14+0000  pre-takeover  DNS: 198.19.0.1   /var/lib/dnsunlock/backup/20261121-234014_pre-takeover
+非交互模式：默认还原最早的一份（原始状态）: /var/lib/dnsunlock/backup/20261121-234014_pre-takeover
+已备份当前 DNS 状态 -> /var/lib/dnsunlock/backup/20261121-234754_pre-restore
+还原前已自动备份当前状态 -> /var/lib/dnsunlock/backup/20261121-234754_pre-restore
+从备份还原: /var/lib/dnsunlock/backup/20261121-234014_pre-takeover（pre-takeover，2026-11-21T23:40:14+0000）
+还原前 agent 在运行（监听 127.0.0.1:15353），先停掉它再重启 systemd-resolved（否则 resolved 抢不到 :53 的 stub）...
+跳过 NM 重载（备份时未在跑或无 nmcli）
+跳过 resolvconf 重载（备份时未在跑）
+已还原 /etc/resolv.conf <- /var/lib/dnsunlock/backup/20261121-234014_pre-takeover/resolv.conf
+已还原并验证通过（getent hosts example.com 有结果）
+agent 还原前在运行（监听 127.0.0.1:15353），正在恢复...
+agent 已恢复运行（监听 127.0.0.1:15353）。

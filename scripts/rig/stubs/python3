@@ -1,10 +1,17 @@
 #!/bin/bash
-# python3 stub（台架用）：chroot 里没有真 python3；只实现 install.sh
-# can_bind_listen 调的那一种——python3 - <host> <port>，用 bindprobe 做
-# 一次真 bind（UDP+TCP，SO_REUSEADDR），通 0 不通 1。其他用法直接报 1。
+# python3 stub（台架用）：只拦截 install.sh can_bind_listen 调的那一种——
+# python3 - <host> <port>，用 bindprobe 做一次真 bind（UDP+TCP，
+# SO_REUSEADDR），通 0 不通 1。其他调用一律转给真 /usr/bin/python3
+# （R2-09 之后 verify_rule_domain 靠它解析 JSON；计时、IPv6 校验、
+# netplan 改写也一样）。真 python3 由 scripts/rig/provision-rootfs.sh
+# 供应进 rootfs；若它不存在（旧 rootfs 未跑供应脚本），退回旧行为：
+# 报不支持并 exit 1，绝不静默吞掉调用。
 if [ "$1" = "-" ] && [ -n "${3:-}" ]; then
   # bindprobe 的输出不要漏进 install.sh 的 stdout（会污染安装日志），记到自家日志里
   exec /root/rig/bin/bindprobe "${2:-}" "$3" >>/root/rig/logs/bindprobe.log 2>&1
 fi
-echo "stub python3: 不支持的调用: $*" >&2
+if [ -x /usr/bin/python3 ]; then
+  exec /usr/bin/python3 "$@"
+fi
+echo "stub python3: 不支持的调用: $*（且 /usr/bin/python3 不存在）" >&2
 exit 1
